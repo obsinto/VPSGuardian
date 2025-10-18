@@ -1,0 +1,53 @@
+# Logs
+*.log
+/logs/
+migration-logs/
+volume-migration-logs/
+
+# Backups
+*.tar.gz
+*.tar
+*.zip
+*.gz
+/backups/
+coolify-backups/
+volume-backups/
+
+# Configurações sensíveis
+config.env
+.env
+*.key
+*.pem
+id_rsa
+id_rsa.pub
+*.crt
+*.cert
+
+# SSH
+.ssh/
+known_hosts
+authorized_keys
+
+# Temporários
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Sistema
+.cache/
+.claude/
+__pycache__/
+*.pyc
+
+# Testes locais
+test-output/
+tmp/
+temp/

@@ -2,6 +2,10 @@
 
 Sistema completo e automatizado de manutenção preventiva e backup para servidores VPS rodando Docker e Coolify.
 
+**⚡ Quer começar rápido?** Veja o [QUICK-START.md](QUICK-START.md) (5 minutos para produção)
+
+**📝 Histórico de versões:** [CHANGELOG.md](CHANGELOG.md)
+
 ---
 
 ## 📦 O que este sistema faz?
@@ -10,10 +14,12 @@ Sistema completo e automatizado de manutenção preventiva e backup para servido
 ✅ Backup completo do Coolify (banco de dados PostgreSQL, SSH keys, configurações)
 ✅ Backup automático semanal com retenção configurável (padrão: 30 dias)
 ✅ Compactação automática para economizar espaço
-✅ Backup de volumes Docker individuais
-✅ Suporte para backup off-site (S3, servidor remoto, Dropbox, etc)
+✅ Backup de volumes Docker individuais (modo simples e interativo)
+✅ **Upload para múltiplos destinos:** Self-hosted, Google Drive (rclone), AWS S3 ⭐ NOVO
 ✅ Notificações via email, Discord ou Slack
 ✅ Documentação completa de restauração incluída em cada backup
+✅ **Restauração local e remota de volumes** ⭐ NOVO
+✅ **Restauração completa do Coolify de forma totalmente remota** ⭐ NOVO
 
 ### Sistema de Manutenção
 ✅ Updates de segurança automáticos (via unattended-upgrades)
@@ -38,18 +44,23 @@ Sistema completo e automatizado de manutenção preventiva e backup para servido
 
 ```
 manutencao_backup_vps/
+├── instalar.sh                     # 🚀 Instalador automático
 ├── backup/
-│   ├── backup-coolify.sh              # Script principal de backup
-│   ├── backup-volume.sh                # Backup de volumes (modo simples)
-│   ├── backup-volume-interativo.sh     # Backup de volumes (modo interativo)
-│   ├── restaurar-volume.sh             # Restauração de volumes (modo simples)
-│   └── restaurar-volume-interativo.sh  # Restauração de volumes (modo interativo)
+│   ├── backup-coolify.sh                  # Script principal de backup
+│   ├── backup-databases.sh                 # 🆕 Backup automático de bancos (PostgreSQL + MySQL)
+│   ├── backup-volume.sh                    # Backup de volumes (modo simples)
+│   ├── backup-volume-interativo.sh         # Backup de volumes (modo interativo)
+│   ├── backup-destinos.sh                  # ⭐ Upload para múltiplos destinos
+│   ├── restaurar-volume-interativo.sh      # ⭐ Restauração local/remota de volumes
+│   └── restaurar-coolify-remoto.sh         # ⭐ Restauração completa remota do Coolify
 ├── manutencao/
-│   ├── manutencao-completa.sh      # Script de manutenção automatizada
-│   └── alerta-disco.sh             # Alerta de espaço em disco
+│   ├── manutencao-completa.sh              # Script de manutenção automatizada
+│   ├── alerta-disco.sh                      # Alerta de espaço em disco
+│   └── configurar-updates-automaticos.sh    # ⭐ Configuração de updates automáticos
 ├── scripts-auxiliares/
 │   ├── status-completo.sh          # Dashboard de status do sistema
-│   └── test-sistema.sh             # Teste de todo o sistema
+│   ├── test-sistema.sh             # Teste de todo o sistema
+│   └── configurar-cron.sh          # ⭐ Configuração automática de cron jobs
 ├── migrar/
 │   ├── migrar-coolify.sh           # Migração do Coolify para novo servidor
 │   ├── migrar-volumes.sh           # Migração de volumes Docker
@@ -59,6 +70,7 @@ manutencao_backup_vps/
 │   └── crontab-exemplo.txt         # Exemplo de configuração do cron
 ├── docs/
 │   ├── GUIA-BACKUP.md              # Guia completo de backup
+│   ├── GUIA-BACKUP-DESTINOS.md     # ⭐ Backup multi-destino e restauração remota
 │   ├── GUIA-MANUTENCAO.md          # Guia completo de manutenção
 │   └── GUIA-MIGRACAO.md            # Guia completo de migração
 └── README.md                       # Este arquivo
@@ -75,7 +87,49 @@ manutencao_backup_vps/
 - Coolify instalado e rodando
 - Acesso root via SSH
 
-### Instalação Completa (5 minutos)
+### Instalação Automatizada (2 minutos) ⭐ RECOMENDADA
+
+```bash
+# 1. Clonar repositório
+git clone https://github.com/SEU_USUARIO/manutencao_backup_vps.git
+cd manutencao_backup_vps
+
+# 2. Instalar dependências
+sudo apt update
+sudo apt install unattended-upgrades apt-listchanges -y
+
+# 3. Executar instalador
+sudo ./instalar.sh
+# Scripts em /opt/manutencao/
+# Logs em /var/log/manutencao/
+# Backups em /root/coolify-backups/
+# Comandos globais em /usr/local/bin/
+# O instalador perguntará se quer configurar:
+#   - Updates automáticos (unattended-upgrades)
+#   - Tarefas agendadas (cron jobs)
+
+# 4. Testar instalação
+sudo /opt/manutencao/test-sistema.sh
+status-completo
+```
+
+**💡 Dicas:**
+- O instalador oferece configurar updates automáticos e cron automaticamente
+- Se preferir configurar depois manualmente:
+```bash
+# Configurar updates automáticos
+sudo /opt/manutencao/configurar-updates-automaticos.sh
+
+# Configurar cron jobs automaticamente
+sudo /opt/manutencao/configurar-cron.sh
+```
+
+---
+
+### Instalação Manual (Avançada)
+
+<details>
+<summary>Clique para ver instalação passo a passo (não recomendada - use os instaladores acima)</summary>
 
 ```bash
 # 1. Clonar repositório
@@ -124,6 +178,8 @@ status-completo
 sudo /opt/manutencao/test-sistema.sh
 ```
 
+</details>
+
 ---
 
 ## 📅 Calendário de Execução Automática
@@ -142,27 +198,51 @@ sudo /opt/manutencao/test-sistema.sh
 
 ### Guias Completos
 
-- [**GUIA-BACKUP.md**](docs/GUIA-BACKUP.md) - Instalação, configuração e uso do sistema de backup
-- [**GUIA-MANUTENCAO.md**](docs/GUIA-MANUTENCAO.md) - Instalação, configuração e uso do sistema de manutenção
+- [**GUIA-BACKUP.md**](docs/GUIA-BACKUP.md) - Guia completo de backup
+- [**GUIA-BACKUP-DESTINOS.md**](docs/GUIA-BACKUP-DESTINOS.md) - Backup multi-destino e restauração remota
+- [**GUIA-MANUTENCAO.md**](docs/GUIA-MANUTENCAO.md) - Guia completo de manutenção
+- [**GUIA-MIGRACAO.md**](docs/GUIA-MIGRACAO.md) - Guia completo de migração
 
 ### Comandos Essenciais
 
 #### Backup
 ```bash
-# Executar backup manual
+# 🆕 Backup automático de todos os bancos de dados (PostgreSQL + MySQL)
+sudo /opt/manutencao/backup-databases.sh
+# Detecta automaticamente todos os bancos e faz dump comprimido
+
+# Executar backup manual do Coolify
 sudo /opt/manutencao/backup-coolify.sh
 
-# Ver backups existentes
-ls -lh /root/coolify-backups/
-
-# Ver log de backup
-tail -50 /var/log/manutencao/backup-coolify.log
-
-# Backup de volume específico (modo simples)
-sudo backup-volume nome_do_volume
-
-# Backup de volume específico (modo interativo)
+# Backup de volume (modo interativo)
 sudo backup-volume-interativo
+
+# ⭐ Enviar backup para múltiplos destinos
+sudo /opt/manutencao/backup-destinos.sh /root/database-backups/databases-backup-*.tar.gz
+sudo /opt/manutencao/backup-destinos.sh /root/coolify-backups/BACKUP.tar.gz
+# Escolha: Self-hosted, Google Drive ou AWS S3
+
+# Ver backups existentes
+ls -lh /root/database-backups/     # Bancos de dados
+ls -lh /root/coolify-backups/      # Coolify
+ls -lh /root/volume-backups/       # Volumes
+
+# Ver logs de backup
+tail -50 /var/log/manutencao/cron-db-backup.log
+tail -50 /var/log/manutencao/backup-coolify.log
+```
+
+#### Restauração
+```bash
+# ⭐ NOVO: Restaurar volume localmente ou remotamente (script unificado)
+sudo restaurar-volume-interativo
+
+# Restaurar volume em servidor remoto (da máquina antiga)
+sudo restaurar-volume-interativo --remote 192.168.1.100
+
+# ⭐ NOVO: Restaurar Coolify completo remotamente (da máquina antiga)
+sudo /opt/manutencao/restaurar-coolify-remoto.sh
+# Restaura tudo: DB, SSH keys, configs - totalmente automatizado!
 ```
 
 #### Manutenção
