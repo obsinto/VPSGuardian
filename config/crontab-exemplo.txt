@@ -1,0 +1,19 @@
+# ========== MANUTENÇÃO E BACKUP DO VPS ==========
+#
+# Para instalar este crontab:
+# sudo crontab -e
+# Cole as linhas abaixo e salve
+
+# Backup completo do Coolify - Todo domingo às 2h
+0 2 * * 0 /opt/manutencao/backup-coolify.sh >> /var/log/manutencao/cron.log 2>&1
+
+# Manutenção preventiva - Toda segunda às 3h
+0 3 * * 1 /opt/manutencao/manutencao-completa.sh >> /var/log/manutencao/cron.log 2>&1
+
+# Alerta de disco cheio - Todo dia às 9h
+0 9 * * * /opt/manutencao/alerta-disco.sh >> /var/log/manutencao/cron.log 2>&1
+
+# Backup mensal dos logs - Dia 1 de cada mês às 4h
+0 4 1 * * tar -czf /var/log/manutencao/backup-logs-$(date +\%Y\%m).tar.gz /var/log/manutencao/*.log && find /var/log/manutencao -name "*.log" -mtime +60 -delete
+
+# ================================================
