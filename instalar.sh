@@ -340,35 +340,119 @@ EOF
 create_global_commands() {
     log_section "CRIANDO COMANDOS GLOBAIS"
 
-    # Wrapper para menu principal
-    cat > /usr/local/bin/manutencao-menu << EOF
+    # Wrapper principal inteligente: vps-guardian
+    cat > /usr/local/bin/vps-guardian << 'WRAPPER_EOF'
 #!/bin/bash
-source "$INSTALL_CONFIG"
-exec sudo bash "\$INSTALL_ROOT/menu-principal.sh" "\$@"
-EOF
-    chmod +x /usr/local/bin/manutencao-menu
-    log_success "Comando global criado: manutencao-menu"
 
-    # Wrapper para backup
-    cat > /usr/local/bin/manutencao-backup << EOF
-#!/bin/bash
-source "$INSTALL_CONFIG"
-exec sudo bash "\$INSTALL_ROOT/backup/backup-coolify.sh" "\$@"
-EOF
-    chmod +x /usr/local/bin/manutencao-backup
-    log_success "Comando global criado: manutencao-backup"
+# Determinar diretório de configuração
+INSTALL_CONFIG="/opt/manutencao_backup_vps/.install.conf"
+if [ ! -f "$INSTALL_CONFIG" ]; then
+    echo "❌ Erro: VPS Guardian não está instalado"
+    echo "Execute: sudo ./instalar.sh"
+    exit 1
+fi
 
-    # Wrapper para status
-    if [ -f "$INSTALL_ROOT/scripts-auxiliares/verificar-saude-completa.sh" ]; then
-        cat > /usr/local/bin/manutencao-status << EOF
-#!/bin/bash
 source "$INSTALL_CONFIG"
-exec sudo bash "\$INSTALL_ROOT/scripts-auxiliares/verificar-saude-completa.sh" "\$@"
-EOF
-        chmod +x /usr/local/bin/manutencao-status
-        log_success "Comando global criado: manutencao-status"
-    fi
 
+# Cores
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+show_help() {
+    echo -e "${GREEN}🛡️  VPS Guardian${NC} - Sistema de Manutenção e Backup VPS"
+    echo ""
+    echo "Uso: vps-guardian [comando] [opções]"
+    echo ""
+    echo "Comandos:"
+    echo "  menu              📋 Abre o menu principal interativo"
+    echo "  backup            📦 Faz backup completo do Coolify"
+    echo "  status            📊 Mostra status completo do sistema"
+    echo "  firewall          🔧 Configura firewall (UFW)"
+    echo "  updates           🔄 Configura updates automáticos"
+    echo "  cron              ⏰ Configura cron jobs"
+    echo "  --help, -h        ❓ Mostra esta ajuda"
+    echo "  --version, -v     ℹ️  Mostra versão"
+    echo ""
+    echo "Exemplos:"
+    echo "  vps-guardian              # Abre menu principal"
+    echo "  vps-guardian backup       # Faz backup"
+    echo "  vps-guardian status       # Ver status"
+    echo "  sudo vps-guardian firewall # Configurar firewall"
+    echo ""
+}
+
+show_version() {
+    echo -e "${GREEN}VPS Guardian${NC} v1.0.0"
+    echo "Sistema de Manutenção e Backup VPS"
+    echo "Instalado em: $INSTALL_ROOT"
+    echo ""
+}
+
+# Se sem argumentos, abre menu
+if [ $# -eq 0 ]; then
+    exec sudo bash "$INSTALL_ROOT/menu-principal.sh"
+fi
+
+# Processar comando
+case "$1" in
+    menu)
+        exec sudo bash "$INSTALL_ROOT/menu-principal.sh"
+        ;;
+    backup)
+        exec sudo bash "$INSTALL_ROOT/backup/backup-coolify.sh" "${@:2}"
+        ;;
+    status)
+        if [ -f "$INSTALL_ROOT/scripts-auxiliares/verificar-saude-completa.sh" ]; then
+            exec bash "$INSTALL_ROOT/scripts-auxiliares/verificar-saude-completa.sh" "${@:2}"
+        else
+            echo "❌ Script de status não encontrado"
+            exit 1
+        fi
+        ;;
+    firewall)
+        if [ -f "$INSTALL_ROOT/manutencao/firewall-perfil-padrao.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/manutencao/firewall-perfil-padrao.sh" "${@:2}"
+        else
+            echo "❌ Script de firewall não encontrado"
+            exit 1
+        fi
+        ;;
+    updates)
+        if [ -f "$INSTALL_ROOT/manutencao/configurar-updates-automaticos.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/manutencao/configurar-updates-automaticos.sh" "${@:2}"
+        else
+            echo "❌ Script de updates não encontrado"
+            exit 1
+        fi
+        ;;
+    cron)
+        if [ -f "$INSTALL_ROOT/scripts-auxiliares/configurar-cron.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/scripts-auxiliares/configurar-cron.sh" "${@:2}"
+        else
+            echo "❌ Script de cron não encontrado"
+            exit 1
+        fi
+        ;;
+    --help|-h)
+        show_help
+        ;;
+    --version|-v)
+        show_version
+        ;;
+    *)
+        echo "❌ Comando desconhecido: $1"
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac
+WRAPPER_EOF
+
+    chmod +x /usr/local/bin/vps-guardian
+    log_success "Comando global criado: vps-guardian"
+    echo ""
+    log_info "Teste: vps-guardian --help"
     echo ""
 }
 
@@ -517,18 +601,25 @@ show_summary() {
     echo "   • $([ "$USE_SYMLINKS" = "true" ] && echo "Symlinks (atualizações fáceis com git pull)" || echo "Cópias")"
     echo ""
 
-    echo "🚀 Comandos disponíveis:"
-    echo "   • manutencao-menu      (Menu principal)"
-    echo "   • manutencao-backup    (Fazer backup)"
-    echo "   • manutencao-status    (Ver status)"
+    echo "🛡️  Comando disponível:"
+    echo "   • vps-guardian [comando]"
+    echo ""
+    echo "   Subcomandos:"
+    echo "     - vps-guardian            (abre menu principal)"
+    echo "     - vps-guardian backup     (faz backup)"
+    echo "     - vps-guardian status     (mostra status)"
+    echo "     - vps-guardian firewall   (configura firewall)"
+    echo "     - vps-guardian updates    (configura updates)"
+    echo "     - vps-guardian cron       (configura cron)"
+    echo "     - vps-guardian --help     (mostra ajuda)"
     echo ""
 
     echo "📚 Próximos passos:"
-    echo "   1. Execute o menu: ${CYAN}manutencao-menu${NC}"
-    echo "   2. Configure firewall: Menu → 5 → 1"
-    echo "   3. Configure updates: Menu → 3 → 3"
-    echo "   4. Configure cron: Menu → 5 → 2"
-    echo "   5. Faça primeiro backup: ${CYAN}manutencao-backup${NC}"
+    echo "   1. Execute o menu: ${CYAN}vps-guardian${NC}"
+    echo "   2. Configure firewall: ${CYAN}vps-guardian firewall${NC} (ou Menu → 5 → 1)"
+    echo "   3. Configure updates: ${CYAN}vps-guardian updates${NC} (ou Menu → 3 → 3)"
+    echo "   4. Configure cron: ${CYAN}vps-guardian cron${NC} (ou Menu → 5 → 2)"
+    echo "   5. Faça primeiro backup: ${CYAN}vps-guardian backup${NC}"
     echo ""
 
     echo "📖 Documentação:"
