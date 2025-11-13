@@ -82,10 +82,127 @@ REBOOT_TIME=${REBOOT_TIME:-03:00}
 read -p "$LOG_PREFIX [ INPUT ] Email para notificações (deixe vazio para não enviar): " EMAIL_ADDRESS
 
 echo ""
+
+# =========================================
+# SELEÇÃO DE PACOTES PARA BLACKLIST
+# =========================================
+log "INFO" "========== PROTEÇÃO DE PACOTES =========="
+echo ""
+
+# Array com pacotes e descrições (ESCALÁVEL - fácil adicionar novos)
+declare -a PACKAGES=(
+    "docker-ce:Docker Engine"
+    "docker-ce-cli:Docker CLI"
+    "containerd.io:Containerd Runtime"
+    "docker-compose-v2:Docker Compose"
+    "postgresql-*:PostgreSQL Database"
+    "mysql-server:MySQL Server"
+    "mariadb-server:MariaDB Server"
+    "nginx:Nginx Web Server"
+    "apache2:Apache Web Server"
+    "haproxy:HAProxy Load Balancer"
+    "nodejs:Node.js Runtime"
+    "golang-*:Go Programming Language"
+    "python3:Python 3 Interpreter"
+    "redis-server:Redis Cache"
+    "mongodb:MongoDB Database"
+)
+
+# Detectar se Coolify está instalado (pré-selecionar Docker)
+COOLIFY_INSTALLED=false
+if systemctl is-active --quiet coolify 2>/dev/null || [ -d "/opt/coolify" ]; then
+    COOLIFY_INSTALLED=true
+    log "WARN" "⚠️  Coolify detectado no sistema!"
+fi
+
+# Array para rastrear seleções (índice correspondente ao PACKAGES)
+declare -a SELECTED
+for i in "${!PACKAGES[@]}"; do
+    SELECTED[$i]=0
+done
+
+# Se Coolify detectado, pré-selecionar Docker
+if [ "$COOLIFY_INSTALLED" = true ]; then
+    SELECTED[0]=1  # docker-ce
+    SELECTED[1]=1  # docker-ce-cli
+    SELECTED[2]=1  # containerd.io
+    SELECTED[3]=1  # docker-compose
+fi
+
+# Função para renderizar o menu de seleção
+render_package_menu() {
+    clear
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║   Selecione Pacotes para BLACKLIST (proteger de updates)   ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    local counter=1
+    for i in "${!PACKAGES[@]}"; do
+        IFS=':' read -r package_name description <<< "${PACKAGES[$i]}"
+        local checkbox="[ ]"
+        if [ "${SELECTED[$i]}" -eq 1 ]; then
+            checkbox="[✓]"
+        fi
+        printf "  %s %2d. %-30s %s\n" "$checkbox" "$counter" "$package_name" "($description)"
+        ((counter++))
+    done
+
+    echo ""
+    echo "  Digite o número para marcar/desmarcar, 0 para continuar:"
+}
+
+# Loop interativo para seleção
+selecting_packages=true
+while [ "$selecting_packages" = true ]; do
+    render_package_menu
+    read -p "  → " -r selection
+
+    if [ "$selection" = "0" ]; then
+        selecting_packages=false
+    elif [[ "$selection" =~ ^[0-9]+$ ]]; then
+        local index=$((selection - 1))
+        if [ "$index" -ge 0 ] && [ "$index" -lt "${#PACKAGES[@]}" ]; then
+            # Toggle seleção
+            if [ "${SELECTED[$index]}" -eq 0 ]; then
+                SELECTED[$index]=1
+            else
+                SELECTED[$index]=0
+            fi
+        else
+            echo "❌ Número inválido. Tente novamente."
+            sleep 1
+        fi
+    else
+        echo "❌ Entrada inválida. Digite um número."
+        sleep 1
+    fi
+done
+
+echo ""
+clear
+
+echo ""
 log "INFO" "Configurações escolhidas:"
 log "INFO" "  - Updates regulares: $([ "$INCLUDE_UPDATES" = "y" ] && echo "SIM" || echo "NÃO")"
 log "INFO" "  - Reinício automático: $([ "$AUTO_REBOOT" = "y" ] && echo "SIM às $REBOOT_TIME" || echo "NÃO")"
 log "INFO" "  - Email notificações: ${EMAIL_ADDRESS:-Nenhum}"
+echo ""
+log "INFO" "Pacotes na BLACKLIST (protegidos de updates):"
+
+# Contar e listar pacotes selecionados
+selected_count=0
+for i in "${!PACKAGES[@]}"; do
+    if [ "${SELECTED[$i]}" -eq 1 ]; then
+        IFS=':' read -r package_name description <<< "${PACKAGES[$i]}"
+        log "INFO" "    ✓ $package_name ($description)"
+        ((selected_count++))
+    fi
+done
+
+if [ "$selected_count" -eq 0 ]; then
+    log "INFO" "    (Nenhum pacote selecionado)"
+fi
 echo ""
 
 read -p "$LOG_PREFIX [ INPUT ] Continuar com estas configurações? (Y/n): " CONFIRM
@@ -125,12 +242,30 @@ cat >> "$CONFIG_FILE" << 'EOF'
 
 // Pacotes que NUNCA devem ser atualizados automaticamente
 Unattended-Upgrade::Package-Blacklist {
-    // Exemplos (descomente se necessário):
+EOF
+
+# Adicionar pacotes selecionados pelo usuário à blacklist
+has_selected_packages=false
+for i in "${!PACKAGES[@]}"; do
+    if [ "${SELECTED[$i]}" -eq 1 ]; then
+        IFS=':' read -r package_name description <<< "${PACKAGES[$i]}"
+        echo "    \"$package_name\";        // $description" >> "$CONFIG_FILE"
+        has_selected_packages=true
+    fi
+done
+
+# Se nenhum pacote foi selecionado, adicionar um comentário informativo
+if [ "$has_selected_packages" = false ]; then
+    cat >> "$CONFIG_FILE" << 'EOF'
+    // Nenhum pacote selecionado para proteger
+    // Descomente exemplos abaixo se precisar proteger alguns:
     // "docker-ce";        // Docker Engine
-    // "docker-ce-cli";    // Docker CLI
-    // "containerd.io";    // Containerd
-    // "linux-image-*";    // Kernel do Linux
     // "postgresql-*";     // PostgreSQL
+    // "mysql-server";     // MySQL
+EOF
+fi
+
+cat >> "$CONFIG_FILE" << 'EOF'
 };
 
 // Remover dependências não usadas automaticamente
@@ -200,6 +335,57 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 
 log "SUCCESS" "Configuração criada com sucesso"
+echo ""
+
+# Aviso sobre Docker e Coolify
+if [ "$COOLIFY_INSTALLED" = true ]; then
+    # Verificar se Docker foi selecionado
+    docker_selected=false
+    for i in 0 1 2 3; do  # Índices do Docker
+        if [ "${SELECTED[$i]}" -eq 1 ]; then
+            docker_selected=true
+            break
+        fi
+    done
+
+    if [ "$docker_selected" = true ]; then
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║                   ✅ PROTEÇÃO ATIVADA                      ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        log "SUCCESS" "Docker está PROTEGIDO (na BLACKLIST)"
+        echo "  Motivo: Você usa Coolify, e updates de Docker podem:"
+        echo "    • Causar downtime em aplicações"
+        echo "    • Quebrar compatibilidade de containers"
+        echo "    • Causar perda de dados não persistidos"
+        echo ""
+        echo "  ✅ Proteção ativada com sucesso!"
+        echo ""
+        echo "  Para atualizar Docker manualmente no futuro:"
+        echo "    1. Faça backup: sudo bash /backup/backup-coolify.sh"
+        echo "    2. Remova da blacklist: sudo nano /etc/apt/apt.conf.d/50unattended-upgrades"
+        echo "    3. Atualize: sudo apt install docker-ce docker-ce-cli containerd.io"
+        echo "    4. Teste: docker ps -a"
+        echo "    5. Re-adicione à blacklist (recomendado)"
+        echo ""
+    else
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║                   ⚠️  AVISO IMPORTANTE                     ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        log "WARN" "Coolify detectado, mas Docker NÃO foi selecionado"
+        echo "  Recomendação FORTE: Proteja Docker na blacklist"
+        echo ""
+        echo "  Motivos:"
+        echo "    • Updates de Docker podem causar downtime"
+        echo "    • Pode quebrar compatibilidade de containers"
+        echo "    • Risco de perda de dados não persistidos"
+        echo ""
+        echo "  Para re-configurar:"
+        echo "    sudo bash manutencao/configurar-updates-automaticos.sh"
+        echo ""
+    fi
+fi
 echo ""
 
 # Criar configuração adicional

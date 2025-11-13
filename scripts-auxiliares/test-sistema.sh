@@ -84,11 +84,14 @@ echo ""
 
 # Teste 7: Espaço em disco
 echo "🔍 Teste 7: Verificando espaço em disco..."
-DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
-if [ "$DISK_USAGE" -lt 80 ]; then
+DISK_USAGE=$(df / 2>/dev/null | awk 'NR==2 {print $5}' | sed 's/%//')
+if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -lt 80 ] 2>/dev/null; then
     echo "  ✓ Disco em ${DISK_USAGE}% (OK)"
-else
+elif [ -n "$DISK_USAGE" ]; then
     echo "  ⚠  Disco em ${DISK_USAGE}% (ALERTA)"
+else
+    echo "  ✗ Não foi possível verificar uso de disco"
+    ((ERROS++))
 fi
 echo ""
 

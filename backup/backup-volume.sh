@@ -25,11 +25,13 @@ mkdir -p "$BACKUP_DIR"
 
 echo "📦 Fazendo backup do volume: $VOLUME_NAME"
 
+BACKUP_FILENAME=$(basename "$BACKUP_FILE")
+
 docker run --rm \
   -v "$VOLUME_NAME":/volume \
   -v "$BACKUP_DIR":/backup \
   busybox \
-  tar czf /backup/$(basename "$BACKUP_FILE") -C /volume .
+  tar czf "/backup/$BACKUP_FILENAME" -C /volume .
 
 if [ $? -eq 0 ]; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)

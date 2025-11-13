@@ -27,26 +27,39 @@ mkdir -p "$LOG_DIR"
 
 ################################################################################
 # FUNÇÕES AUXILIARES
+# Funções reutilizáveis em todo o menu para logging, UI e validação
 ################################################################################
 
-# Função para logar execuções
+# log_execution(mensagem)
+# Registra a execução de scripts com timestamp
+# Localização: /var/log/manutencao/menu-execucoes.log
+# Uso: log_execution "INÍCIO: Backup Coolify"
 log_execution() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
-# Limpar tela
+# clear_screen()
+# Limpa a tela do terminal antes de exibir novo menu
+# Melhora legibilidade ao navegar entre menus
 clear_screen() {
     clear
 }
 
-# Pausar e aguardar usuário
+# pause()
+# Aguarda usuário pressionar ENTER antes de continuar
+# Permite ler output do script antes de voltar ao menu
+# Uso: Após cada execução de script
 pause() {
     echo ""
     echo -e "${GRAY}Pressione ENTER para continuar...${NC}"
     read -r
 }
 
-# Confirmar ação
+# confirm(mensagem)
+# Confirmação simples (sim/não) para operações normais
+# Retorna: 0 (sim), 1 (não)
+# Uso: if confirm "Executar backup?"; then
+# Diferente de confirm_critical que é para operações críticas
 confirm() {
     local message="$1"
     echo ""
@@ -59,7 +72,13 @@ confirm() {
     esac
 }
 
-# Confirmação detalhada para operações críticas
+# confirm_critical(title, description, impacts, recommendations)
+# Confirmação DETALHADA para operações CRÍTICAS/DESTRUTIVAS
+# Exibe: título, descrição, impactos, recomendações
+# Requer: usuário digitar "SIM" em MAIÚSCULAS para confirmar
+# Retorna: 0 (SIM confirmado), 1 (cancelado)
+# Uso: Restauração, migração, reset de firewall, limpeza Docker
+# Diferente de confirm() que é simples (s/N)
 confirm_critical() {
     local title="$1"
     local description="$2"
@@ -107,7 +126,18 @@ confirm_critical() {
     fi
 }
 
-# Executar script e aguardar
+# run_script(script_path, script_name)
+# Executa um script com validações, logging e tratamento de erro
+# Responsabilidades:
+#   1. Verifica se script existe
+#   2. Verifica/corrige permissão de execução
+#   3. Loga início da execução
+#   4. Executa o script
+#   5. Captura código de retorno
+#   6. Loga resultado (sucesso/erro)
+#   7. Exibe output e aguarda usuário
+# Retorna: código de retorno do script
+# Uso: run_script "$SCRIPT_DIR/backup/backup-coolify.sh" "Backup Coolify"
 run_script() {
     local script_path="$1"
     local script_name="$2"
@@ -118,6 +148,7 @@ run_script() {
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
 
+    # VALIDAÇÃO 1: Script existe?
     if [ ! -f "$script_path" ]; then
         echo -e "${RED}✗ Script não encontrado: $script_path${NC}"
         log_execution "ERRO: Script não encontrado - $script_name"
@@ -125,17 +156,20 @@ run_script() {
         return 1
     fi
 
+    # VALIDAÇÃO 2: Script é executável?
     if [ ! -x "$script_path" ]; then
         echo -e "${YELLOW}⚠ Tornando script executável...${NC}"
         chmod +x "$script_path"
     fi
 
+    # EXECUÇÃO: Log início
     log_execution "INÍCIO: $script_name"
 
-    # Executar script
+    # EXECUÇÃO: Rodar script
     bash "$script_path"
     local exit_code=$?
 
+    # RESULTADO: Exibir e logar
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     if [ $exit_code -eq 0 ]; then
@@ -171,10 +205,12 @@ EOF
 }
 
 ################################################################################
-# MENUS
+# MENUS - Funções de Visualização
+# Cada menu exibe opções disponíveis para categoria específica
+# Padrão: show_xxx_menu() exibe, handle_xxx_menu() processa entrada
 ################################################################################
 
-# Menu principal
+# Menu principal - 7 categorias principais + logs + sair
 show_main_menu() {
     print_header
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -522,6 +558,83 @@ handle_migration_menu() {
     done
 }
 
+# Menu de Firewall
+show_firewall_menu() {
+    print_header
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}🛡️  CONFIGURAÇÃO DE FIREWALL (UFW)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${GREEN}1${NC} → ⚡ Modo Rápido (Perfil Padrão)"
+    echo -e "       ${GRAY}(Você digita sua rede LAN, resto é automático)${NC}"
+    echo -e "       ${GRAY}(SSH: localhost + sua LAN + Docker)${NC}"
+    echo ""
+    echo -e "  ${GREEN}2${NC} → 🔧 Modo Assistente (Configuração Personalizada)"
+    echo -e "       ${GRAY}(Detecta sua rede e permite configuração customizada)${NC}"
+    echo -e "       ${GRAY}(Ideal para redes diferentes ou múltiplas LANs)${NC}"
+    echo ""
+    echo -e "  ${YELLOW}3${NC} → 📊 Ver Status Atual"
+    echo -e "       ${GRAY}(Mostra configuração do firewall agora)${NC}"
+    echo ""
+    echo -e "  ${RED}0${NC} → ↩️  Voltar ao Menu Principal"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -ne "${WHITE}Escolha uma opção: ${NC}"
+}
+
+# Handler de Firewall
+handle_firewall_menu() {
+    while true; do
+        show_firewall_menu
+        read -r option
+
+        case $option in
+            1)
+                # Modo Rápido - Perfil Padrão
+                if confirm_critical \
+                    "⚡ MODO RÁPIDO - PERFIL PADRÃO" \
+                    "Este script irá aplicar a configuração UFW padrão otimizada para\nCoolify + Cloudflare Tunnel.\n\n${WHITE}O que será feito:${NC}\n  • ${RED}RESET TOTAL${NC} de todas as regras\n  • Você irá digitar sua rede LAN\n  • Política: ${RED}DENY${NC} incoming, ${GREEN}ALLOW${NC} outgoing\n  • HTTP/HTTPS (80/443): ${GREEN}PÚBLICO${NC}\n  • SSH (22): ${YELLOW}RESTRITO${NC} a:\n      - Localhost (127.0.0.1)\n      - SUA LAN (você irá digitar)\n      - Redes Docker (10.0.0.0/8)\n  • Loopback: ${GREEN}PERMITIDO${NC} (CF Tunnel)" \
+                    "${RED}⚠ VOCÊ PODE PERDER ACESSO SSH!${NC}\n\nO script pedirá:\n  • Seus 3 primeiros octetos de rede\n    (ex: ${YELLOW}192.168.31${NC} → ${GREEN}192.168.31.0/24${NC})\n\n${YELLOW}Como descobrir:${NC}\n  • Linux/Mac: ${GRAY}ip addr | grep inet${NC}\n  • Windows: ${GRAY}ipconfig${NC}\n  • Se IP é 192.168.31.105 → digite 192.168.31" \
+                    "1. ${GREEN}Saiba sua rede LAN (execute em seu PC: ip addr ou ipconfig)${NC}\n2. ${GREEN}Tenha Cloudflare Tunnel como backup${NC}\n3. ${GREEN}Faça backup: ${GRAY}sudo ufw status numbered > ufw-backup.txt${NC}"; then
+                    run_script "$SCRIPT_DIR/manutencao/firewall-perfil-padrao.sh" "Firewall - Modo Rápido"
+                fi
+                ;;
+            2)
+                # Modo Assistente - Configuração Personalizada
+                if confirm_critical \
+                    "🔧 MODO ASSISTENTE - CONFIGURAÇÃO PERSONALIZADA" \
+                    "Este script irá RESETAR completamente as regras do firewall e guiá-lo\npela configuração personalizada.\n\n${WHITE}O que será feito:${NC}\n  • ${RED}RESET TOTAL${NC} de todas as regras existentes\n  • Detectará automaticamente sua conexão SSH\n  • Solicitará sua(s) rede(s) LAN\n  • Aplicará todas as regras de forma segura\n  • Testará conectividade antes de finalizar" \
+                    "${RED}⚠ VOCÊ PODE PERDER ACESSO SSH SE CONFIGURAR ERRADO!${NC}\n\nSe você:\n  • ${RED}Estiver atrás de CGNAT${NC} → O script ajudará a descobrir\n  • ${RED}Usar Cloudflare Tunnel${NC} → SSH via tunnel funcionará\n  • ${RED}Tem múltiplas LANs${NC} → Pode configurar todas\n\n${YELLOW}O script fornecerá:${NC}\n  • Detecção automática de rede\n  • Instruções passo a passo\n  • Confirmação antes de aplicar" \
+                    "1. ${GREEN}Tenha acesso via Cloudflare Tunnel${NC} como backup\n2. ${GREEN}Saiba o IP da sua rede LAN${NC} (ex: 192.168.1.100)\n3. ${GREEN}Esteja preparado${NC} para acessar via console do provedor\n4. ${GREEN}Faça backup${NC}: ${GRAY}sudo ufw status numbered > ufw-backup.txt${NC}"; then
+                    run_script "$SCRIPT_DIR/manutencao/configurar-firewall.sh" "Firewall - Modo Assistente"
+                fi
+                ;;
+            3)
+                # Ver status atual
+                clear_screen
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                echo -e "${WHITE}📊 Status Atual do Firewall${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                echo ""
+                if command -v ufw &>/dev/null; then
+                    ufw status verbose
+                else
+                    echo -e "${RED}UFW não está instalado${NC}"
+                fi
+                echo ""
+                pause
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Opção inválida!${NC}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 # Configuração
 handle_config_menu() {
     while true; do
@@ -542,14 +655,7 @@ handle_config_menu() {
                 fi
                 ;;
             3)
-                # Confirmação crítica para Firewall
-                if confirm_critical \
-                    "🛡️  CONFIGURAÇÃO DE FIREWALL (UFW)" \
-                    "Este script irá RESETAR completamente as regras do firewall e aplicar\numa configuração otimizada para Coolify com segurança.\n\n${WHITE}O que será feito:${NC}\n  • ${RED}RESET TOTAL${NC} de todas as regras existentes\n  • Política padrão: ${RED}DENY${NC} incoming, ${GREEN}ALLOW${NC} outgoing\n  • Loopback: ${GREEN}PERMITIDO${NC} (essencial para CF Tunnel)\n  • HTTP/HTTPS (80/443): ${GREEN}PÚBLICO${NC}\n  • SSH (22): ${YELLOW}RESTRITO${NC} a:\n      - Localhost (127.0.0.1)\n      - Redes Docker (10.0.0.0/8) - para Coolify gerenciar\n      - Sua(s) rede(s) LAN (você configurará no script)" \
-                    "${RED}⚠ VOCÊ PODE PERDER ACESSO SSH SE CONFIGURAR ERRADO!${NC}\n\nSe você:\n  • ${RED}Estiver atrás de CGNAT${NC} → Precisa saber sua LAN local\n  • ${RED}Usar Cloudflare Tunnel${NC} → SSH via tunnel funcionará\n  • ${RED}Não souber sua rede LAN${NC} → Pode ficar BLOQUEADO\n\n${YELLOW}Durante a execução:${NC}\n  • O script detectará sua conexão\n  • Mostrará avisos se detectar CGNAT\n  • Você configurará manualmente sua(s) rede(s) LAN\n  • Haverá confirmação final antes de aplicar" \
-                    "1. ${GREEN}Tenha acesso via Cloudflare Tunnel${NC} como backup\n2. ${GREEN}Saiba o IP da sua rede LAN${NC} (ex: 192.168.1.0/24)\n3. ${GREEN}Esteja preparado${NC} para acessar via console do provedor\n4. ${GREEN}Faça backup${NC} das regras atuais: ${GRAY}sudo ufw status numbered > ufw-backup.txt${NC}"; then
-                    run_script "$SCRIPT_DIR/manutencao/configurar-firewall.sh" "Configurar Firewall"
-                fi
+                handle_firewall_menu
                 ;;
             4)
                 clear_screen
