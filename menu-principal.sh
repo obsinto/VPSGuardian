@@ -308,6 +308,10 @@ show_maintenance_menu() {
     echo -e "  ${GREEN}5${NC} → 🔄 Reiniciar Serviços Essenciais"
     echo -e "       ${GRAY}(Docker, Cloudflared, UFW)${NC}"
     echo ""
+    echo -e "  ${GREEN}6${NC} → 🗑️  Limpar Backups Antigos"
+    echo -e "       ${GRAY}(3 estratégias: Simple, Count, GFS)${NC}"
+    echo -e "       ${GRAY}(Libera espaço em disco automaticamente)${NC}"
+    echo ""
     echo -e "  ${RED}0${NC} → ↩️  Voltar ao Menu Principal"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -505,6 +509,9 @@ handle_maintenance_menu() {
                     log_execution "Reinicialização manual de serviços"
                     pause
                 fi
+                ;;
+            6)
+                run_script "$SCRIPT_DIR/scripts-auxiliares/limpar-backups-antigos.sh" "Limpar Backups Antigos"
                 ;;
             0)
                 return
