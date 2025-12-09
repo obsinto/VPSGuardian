@@ -584,10 +584,15 @@ cleanup_local_backup() {
         log_success "Arquivo local removido (backup está no S3)"
     fi
 
-    # Limpar backups locais antigos
-    local removed=$(find "$BACKUP_BASE_DIR" -name "*.tar.gz*" -mtime +7 -delete -print | wc -l)
+    # Limpar backups locais antigos (usa variável configurável)
+    local retention_days="${LOCAL_BACKUP_RETENTION_DAYS:-7}"
+    log_info "Removendo backups locais >$retention_days dias..."
+
+    local removed=$(find "$BACKUP_BASE_DIR" -name "*.tar.gz*" -type f -mtime +$retention_days -delete -print 2>/dev/null | wc -l)
     if [ "$removed" -gt 0 ]; then
-        log_success "$removed backups locais antigos removidos (>7 dias)"
+        log_success "$removed backups locais antigos removidos (>$retention_days dias)"
+    else
+        log_info "Nenhum backup antigo para remover"
     fi
 }
 

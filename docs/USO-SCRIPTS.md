@@ -563,6 +563,106 @@ Score: 85/100 - BOM
 
 ## 🛠️ Auxiliares
 
+### limpar-backups-antigos.sh
+
+**Limpeza inteligente de backups antigos com múltiplas estratégias de retenção.**
+
+**Uso:**
+```bash
+# Modo interativo
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh
+
+# Estratégia SIMPLE (por idade)
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=simple --days=30
+
+# Estratégia COUNT (por quantidade)
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=count --count=10
+
+# Estratégia GFS (Grandfather-Father-Son)
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=gfs
+
+# Dry-run (simular sem deletar)
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=simple --days=30 --dry-run
+```
+
+**3 Estratégias:**
+
+1. **SIMPLE (Simples):**
+   - Deleta backups mais antigos que X dias
+   - Mantém todos dentro do período
+   - Exemplo: `--days=30` mantém últimos 30 dias
+
+2. **COUNT (Quantidade):**
+   - Mantém últimos X backups
+   - Deleta o restante (independente da idade)
+   - Exemplo: `--count=10` mantém últimos 10 backups
+
+3. **GFS (Grandfather-Father-Son):**
+   - **Diários:** últimos 7 dias (todos)
+   - **Semanais:** últimas 4 semanas (1 por semana - domingo)
+   - **Mensais:** últimos 12 meses (1 por mês - dia 1)
+   - Total mantido: ~23 backups (otimizado)
+
+**Configuração global:**
+```bash
+# Editar config/default.conf
+BACKUP_RETENTION_STRATEGY="gfs"  # ou simple, count
+BACKUP_RETENTION_DAYS="30"
+BACKUP_RETENTION_COUNT="10"
+LOCAL_BACKUP_RETENTION_DAYS="7"  # após upload S3
+```
+
+**Automatizar (cron):**
+```bash
+# Limpeza semanal (simple - 30 dias)
+0 3 * * 1 /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=simple --days=30 --auto
+
+# Limpeza diária (count - últimos 10)
+0 4 * * * /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=count --count=10 --auto
+
+# Limpeza mensal (GFS)
+0 5 1 * * /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --strategy=gfs --auto
+```
+
+**Outros diretórios:**
+```bash
+# Limpar volumes (15 dias)
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --dir=/var/backups/vpsguardian/volumes --days=15
+
+# Limpar databases (7 dias)
+sudo /opt/vpsguardian/scripts-auxiliares/limpar-backups-antigos.sh \
+  --dir=/var/backups/vpsguardian/databases --days=7
+```
+
+**Output:**
+```
+✅ MANTENDO (10 backups):
+  ✓ 20241209_153045.tar.gz (200MB) - diário (0d)
+  ✓ 20241208_153045.tar.gz (195MB) - diário (1d)
+  ...
+
+🗑️  DELETANDO (5 backups fora da política):
+  ✗ 20241130_153045.tar.gz (210MB, 2024-11-30)
+  ✗ 20241129_153045.tar.gz (205MB, 2024-11-29)
+  ...
+
+Deletar 5 backups? (y/N):
+```
+
+**Documentação completa:** [docs/RETENCAO-BACKUPS.md](RETENCAO-BACKUPS.md)
+
+**Tempo estimado:** 1-2 minutos
+
+---
+
 ### checklist-migracao.sh
 
 **Checklist interativo para validar migração passo a passo.**
