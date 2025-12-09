@@ -86,7 +86,7 @@ vpsguardian/
 ├── manutencao/                          ← Manutenção do sistema
 │   ├── configurar-updates-automaticos.sh (⭐ Menu interativo!)
 │   ├── alerta-disco.sh
-│   ├── configurar-firewall.sh
+│   ├── firewall-perfil-padrao.sh
 │   └── firewall-perfil-padrao.sh       (⭐ Detecção Coolify!)
 ├── migrar/                              ← Migração segura
 │   ├── migrar-coolify.sh

@@ -382,7 +382,7 @@ handle_status_menu() {
                 run_script "$SCRIPT_DIR/scripts-auxiliares/verificar-saude-completa.sh" "Verificação de Saúde Completa"
                 ;;
             2)
-                run_script "$SCRIPT_DIR/scripts-auxiliares/status-completo.sh" "Status Resumido"
+                run_script "$SCRIPT_DIR/scripts-auxiliares/verificar-saude-completa.sh" "Status Resumido"
                 ;;
             3)
                 run_script "$SCRIPT_DIR/scripts-auxiliares/test-sistema.sh" "Teste do Sistema"
@@ -606,7 +606,7 @@ handle_firewall_menu() {
                     "Este script irá RESETAR completamente as regras do firewall e guiá-lo\npela configuração personalizada.\n\n${WHITE}O que será feito:${NC}\n  • ${RED}RESET TOTAL${NC} de todas as regras existentes\n  • Detectará automaticamente sua conexão SSH\n  • Solicitará sua(s) rede(s) LAN\n  • Aplicará todas as regras de forma segura\n  • Testará conectividade antes de finalizar" \
                     "${RED}⚠ VOCÊ PODE PERDER ACESSO SSH SE CONFIGURAR ERRADO!${NC}\n\nSe você:\n  • ${RED}Estiver atrás de CGNAT${NC} → O script ajudará a descobrir\n  • ${RED}Usar Cloudflare Tunnel${NC} → SSH via tunnel funcionará\n  • ${RED}Tem múltiplas LANs${NC} → Pode configurar todas\n\n${YELLOW}O script fornecerá:${NC}\n  • Detecção automática de rede\n  • Instruções passo a passo\n  • Confirmação antes de aplicar" \
                     "1. ${GREEN}Tenha acesso via Cloudflare Tunnel${NC} como backup\n2. ${GREEN}Saiba o IP da sua rede LAN${NC} (ex: 192.168.1.100)\n3. ${GREEN}Esteja preparado${NC} para acessar via console do provedor\n4. ${GREEN}Faça backup${NC}: ${GRAY}sudo ufw status numbered > ufw-backup.txt${NC}"; then
-                    run_script "$SCRIPT_DIR/manutencao/configurar-firewall.sh" "Firewall - Modo Assistente"
+                    run_script "$SCRIPT_DIR/manutencao/firewall-perfil-padrao.sh" "Firewall - Modo Assistente"
                 fi
                 ;;
             3)

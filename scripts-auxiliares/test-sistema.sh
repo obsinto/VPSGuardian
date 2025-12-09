@@ -14,7 +14,7 @@ ERROS=0
 # Teste 1: Scripts existem e são executáveis
 echo "🔍 Teste 1: Verificando scripts..."
 for script in manutencao-completa.sh backup-coolify.sh alerta-disco.sh; do
-    if [ -x "/opt/manutencao/$script" ]; then
+    if [ -x "/opt/vpsguardian/$script" ]; then
         echo "  ✓ $script OK"
     else
         echo "  ✗ $script FALTANDO ou não executável"
@@ -25,7 +25,7 @@ echo ""
 
 # Teste 2: Diretórios existem
 echo "🔍 Teste 2: Verificando diretórios..."
-for dir in /opt/manutencao /var/log/manutencao /root/coolify-backups; do
+for dir in /opt/vpsguardian /var/log/manutencao /root/coolify-backups; do
     if [ -d "$dir" ]; then
         echo "  ✓ $dir OK"
     else

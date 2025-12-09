@@ -250,8 +250,8 @@ if [ "$MODE" = "1" ]; then
     if [ "$config_fw" = "s" ]; then
         log "INFO" "Execute na VPS de TESTE:"
         echo "  ssh root@$TEST_VPS_IP"
-        echo "  cd /opt/manutencao_backup_vps"
-        echo "  ./manutencao/configurar-firewall.sh"
+        echo "  cd /opt/vpsguardian"
+        echo "  ./manutencao/firewall-perfil-padrao.sh"
         echo ""
         confirm_step "Firewall configurado na VPS de teste" ""
     else

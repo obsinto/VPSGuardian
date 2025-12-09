@@ -476,13 +476,13 @@ else
 fi
 
 print_section "Scripts de Backup"
-if [ -f /root/manutencao_backup_vps/backup/backup-coolify.sh ]; then
+if [ -f /opt/vpsguardian/backup/backup-coolify.sh ]; then
     echo -e "  $CHECK Script backup-coolify.sh encontrado"
 else
     echo -e "  $WARN Script backup-coolify.sh não encontrado"
 fi
 
-if [ -f /root/manutencao_backup_vps/backup/backup-databases.sh ]; then
+if [ -f /opt/vpsguardian/backup/backup-databases.sh ]; then
     echo -e "  $CHECK Script backup-databases.sh encontrado"
 else
     echo -e "  $INFO Script backup-databases.sh não encontrado"

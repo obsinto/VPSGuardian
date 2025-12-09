@@ -43,18 +43,18 @@ echo ""
 log "INFO" "Verificando scripts necessários..."
 ERRORS=0
 
-if [ ! -x "/opt/manutencao/backup-coolify.sh" ]; then
-    log_error "Script de backup não encontrado: /opt/manutencao/backup-coolify.sh"
+if [ ! -x "/opt/vpsguardian/backup-coolify.sh" ]; then
+    log_error "Script de backup não encontrado: /opt/vpsguardian/backup-coolify.sh"
     ((ERRORS++))
 fi
 
-if [ ! -x "/opt/manutencao/manutencao-completa.sh" ]; then
-    log_error "Script de manutenção não encontrado: /opt/manutencao/manutencao-completa.sh"
+if [ ! -x "/opt/vpsguardian/manutencao-completa.sh" ]; then
+    log_error "Script de manutenção não encontrado: /opt/vpsguardian/manutencao-completa.sh"
     ((ERRORS++))
 fi
 
-if [ ! -x "/opt/manutencao/alerta-disco.sh" ]; then
-    log_error "Script de alerta não encontrado: /opt/manutencao/alerta-disco.sh"
+if [ ! -x "/opt/vpsguardian/alerta-disco.sh" ]; then
+    log_error "Script de alerta não encontrado: /opt/vpsguardian/alerta-disco.sh"
     ((ERRORS++))
 fi
 
@@ -236,11 +236,11 @@ echo ""
 TEMP_CRON=$(mktemp)
 
 # Adicionar crontab existente (removendo entradas antigas do sistema)
-crontab -l 2>/dev/null | grep -v "/opt/manutencao/backup-coolify.sh" | \
-    grep -v "/opt/manutencao/backup-databases.sh" | \
-    grep -v "/opt/manutencao/manutencao-completa.sh" | \
-    grep -v "/opt/manutencao/alerta-disco.sh" | \
-    grep -v "/opt/manutencao/backup-destinos.sh" | \
+crontab -l 2>/dev/null | grep -v "/opt/vpsguardian/backup-coolify.sh" | \
+    grep -v "/opt/vpsguardian/backup-databases.sh" | \
+    grep -v "/opt/vpsguardian/manutencao-completa.sh" | \
+    grep -v "/opt/vpsguardian/alerta-disco.sh" | \
+    grep -v "/opt/vpsguardian/backup-destinos.sh" | \
     grep -v "logrotate" > "$TEMP_CRON" || true
 
 # Adicionar cabeçalho
@@ -263,13 +263,13 @@ if [ "$ENABLE_DB_BACKUP" = "y" ]; then
     if [ "$DB_BACKUP_FREQ" = "daily" ]; then
         cat >> "$TEMP_CRON" << EOF
 # Backup automático de bancos de dados (diário às $DB_BACKUP_TIME)
-$DB_BACKUP_MIN $DB_BACKUP_HOUR * * * /opt/manutencao/backup-databases.sh >> /var/log/manutencao/cron-db-backup.log 2>&1
+$DB_BACKUP_MIN $DB_BACKUP_HOUR * * * /opt/vpsguardian/backup-databases.sh >> /var/log/manutencao/cron-db-backup.log 2>&1
 
 EOF
     else
         cat >> "$TEMP_CRON" << EOF
 # Backup automático de bancos de dados (semanal ${DB_BACKUP_DAY}=Dia da semana, $DB_BACKUP_TIME)
-$DB_BACKUP_MIN $DB_BACKUP_HOUR * * $DB_BACKUP_DAY /opt/manutencao/backup-databases.sh >> /var/log/manutencao/cron-db-backup.log 2>&1
+$DB_BACKUP_MIN $DB_BACKUP_HOUR * * $DB_BACKUP_DAY /opt/vpsguardian/backup-databases.sh >> /var/log/manutencao/cron-db-backup.log 2>&1
 
 EOF
     fi
@@ -278,7 +278,7 @@ fi
 # Adicionar backup do Coolify
 cat >> "$TEMP_CRON" << EOF
 # Backup completo do Coolify (${BACKUP_DAY}=Dia da semana, $BACKUP_TIME)
-$BACKUP_MIN $BACKUP_HOUR * * $BACKUP_DAY /opt/manutencao/backup-coolify.sh >> /var/log/manutencao/cron-backup.log 2>&1
+$BACKUP_MIN $BACKUP_HOUR * * $BACKUP_DAY /opt/vpsguardian/backup-coolify.sh >> /var/log/manutencao/cron-backup.log 2>&1
 
 EOF
 
@@ -300,7 +300,7 @@ if [ "$AUTO_UPLOAD" = "y" ]; then
 
     cat >> "$TEMP_CRON" << EOF
 # Upload automático de backups para $UPLOAD_DEST ($UPLOAD_DELAY hora(s) após o backup)
-$BACKUP_MIN $UPLOAD_HOUR * * $UPLOAD_DAY find /root/coolify-backups -name "coolify-backup-*.tar.gz" -mmin -120 -exec /opt/manutencao/backup-destinos.sh {} --dest=$UPLOAD_DEST \; >> /var/log/manutencao/cron-upload.log 2>&1
+$BACKUP_MIN $UPLOAD_HOUR * * $UPLOAD_DAY find /root/coolify-backups -name "coolify-backup-*.tar.gz" -mmin -120 -exec /opt/vpsguardian/backup-destinos.sh {} --dest=$UPLOAD_DEST \; >> /var/log/manutencao/cron-upload.log 2>&1
 
 EOF
 fi
@@ -308,14 +308,14 @@ fi
 # Adicionar manutenção preventiva
 cat >> "$TEMP_CRON" << EOF
 # Manutenção preventiva semanal (${MANUTENCAO_DAY}=Dia da semana, $MANUTENCAO_TIME)
-$MANUTENCAO_MIN $MANUTENCAO_HOUR * * $MANUTENCAO_DAY /opt/manutencao/manutencao-completa.sh >> /var/log/manutencao/cron-manutencao.log 2>&1
+$MANUTENCAO_MIN $MANUTENCAO_HOUR * * $MANUTENCAO_DAY /opt/vpsguardian/manutencao-completa.sh >> /var/log/manutencao/cron-manutencao.log 2>&1
 
 EOF
 
 # Adicionar alerta de disco
 cat >> "$TEMP_CRON" << EOF
 # Alerta de espaço em disco (diário às $ALERTA_TIME)
-$ALERTA_MIN $ALERTA_HOUR * * * /opt/manutencao/alerta-disco.sh >> /var/log/manutencao/cron-alerta.log 2>&1
+$ALERTA_MIN $ALERTA_HOUR * * * /opt/vpsguardian/alerta-disco.sh >> /var/log/manutencao/cron-alerta.log 2>&1
 
 EOF
 

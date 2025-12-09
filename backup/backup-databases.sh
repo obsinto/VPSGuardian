@@ -327,7 +327,7 @@ fi
 echo "  💡 Próximos passos:"
 echo ""
 echo "  1. Enviar para destino remoto:"
-echo "     sudo /opt/manutencao/backup-destinos.sh $TARBALL"
+echo "     sudo /opt/vpsguardian/backup-destinos.sh $TARBALL"
 echo ""
 echo "  2. Ver informações do backup:"
 echo "     tar -xzf $TARBALL"

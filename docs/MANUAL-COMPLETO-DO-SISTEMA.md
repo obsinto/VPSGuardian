@@ -121,7 +121,7 @@ manutencao_backup_vps/
 │   ├── manutencao-completa.sh         • Atualizar, limpar, verificar
 │   ├── alerta-disco.sh                • Monitorar espaço
 │   ├── configurar-updates-automaticos.sh • unattended-upgrades
-│   ├── configurar-firewall.sh         • Firewall assistente
+│   ├── firewall-perfil-padrao.sh         • Firewall assistente
 │   └── firewall-perfil-padrao.sh      • Firewall modo rápido
 │
 ├── migrar/                            ← Scripts de migração (3)
@@ -131,7 +131,7 @@ manutencao_backup_vps/
 │
 ├── scripts-auxiliares/                ← Utilities (4)
 │   ├── verificar-saude-completa.sh    • 17 seções, score 0-100
-│   ├── status-completo.sh             • Resumo rápido
+│   ├── verificar-saude-completa.sh             • Resumo rápido
 │   ├── test-sistema.sh                • Testes funcionais
 │   └── configurar-cron.sh             • Agendar tarefas
 │
@@ -341,7 +341,7 @@ Escolha uma opção: _
 **Quando usar:** Diagnóstico completo do sistema
 **Tempo:** ~30-60 segundos
 
-**Script: status-completo.sh**
+**Script: verificar-saude-completa.sh**
 - Resumo rápido
 - Informações principais
 - Sem detalhes profundos
@@ -845,7 +845,7 @@ Tudo mais: BLOQUEADO
 
 **⚠️ Confirmação crítica necessária**
 
-### Modo Assistente: configurar-firewall.sh
+### Modo Assistente: firewall-perfil-padrao.sh
 
 **Oferece:**
 - Detecção automática de rede

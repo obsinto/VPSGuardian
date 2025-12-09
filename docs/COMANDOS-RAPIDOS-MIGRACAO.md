@@ -319,7 +319,7 @@ vps-guardian firewall
 
 # OU manualmente
 cd /opt/vpsguardian
-./manutencao/configurar-firewall.sh
+./manutencao/firewall-perfil-padrao.sh
 
 # Verificar regras do firewall
 ufw status verbose
