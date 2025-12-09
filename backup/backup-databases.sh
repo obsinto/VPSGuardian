@@ -61,7 +61,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 SESSION_DIR="$BACKUP_DIR/backup-$TIMESTAMP"
 mkdir -p "$SESSION_DIR"
 
-log "INFO" "Diretório de backup: $SESSION_DIR"
+log_info "Diretório de backup: $SESSION_DIR"
 echo ""
 
 # Contadores
@@ -75,18 +75,18 @@ declare -a BACKUP_FILES
 declare -a BACKUP_SIZES
 
 # ========== DETECTAR E FAZER BACKUP DE POSTGRESQL ==========
-log "INFO" "========== DETECTANDO POSTGRESQL =========="
+log_info "========== DETECTANDO POSTGRESQL =========="
 echo ""
 
 POSTGRES_CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E 'postgres|pg|db' | grep -v 'mysql\|mariadb' || true)
 
 if [ -z "$POSTGRES_CONTAINERS" ]; then
-    log "INFO" "Nenhum container PostgreSQL detectado"
+    log_info "Nenhum container PostgreSQL detectado"
 else
     while IFS= read -r CONTAINER; do
         # Tentar detectar se é realmente PostgreSQL
         if docker exec "$CONTAINER" psql --version >/dev/null 2>&1; then
-            log "INFO" "Detectado PostgreSQL: $CONTAINER"
+            log_info "Detectado PostgreSQL: $CONTAINER"
 
             # Obter informações do container
             POSTGRES_USER=$(docker exec "$CONTAINER" printenv POSTGRES_USER 2>/dev/null || echo "postgres")
@@ -106,7 +106,7 @@ else
 
                 BACKUP_FILE="$SESSION_DIR/${CONTAINER}_${DB}_pg_${TIMESTAMP}.sql"
 
-                log "INFO" "Fazendo backup: $CONTAINER/$DB"
+                log_info "Fazendo backup: $CONTAINER/$DB"
 
                 if docker exec "$CONTAINER" pg_dump -U "$POSTGRES_USER" -d "$DB" --clean --if-exists > "$BACKUP_FILE" 2>/dev/null; then
                     # Comprimir backup
@@ -135,18 +135,18 @@ fi
 echo ""
 
 # ========== DETECTAR E FAZER BACKUP DE MYSQL/MARIADB ==========
-log "INFO" "========== DETECTANDO MYSQL/MARIADB =========="
+log_info "========== DETECTANDO MYSQL/MARIADB =========="
 echo ""
 
 MYSQL_CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E 'mysql|mariadb' || true)
 
 if [ -z "$MYSQL_CONTAINERS" ]; then
-    log "INFO" "Nenhum container MySQL/MariaDB detectado"
+    log_info "Nenhum container MySQL/MariaDB detectado"
 else
     while IFS= read -r CONTAINER; do
         # Tentar detectar se é realmente MySQL/MariaDB
         if docker exec "$CONTAINER" mysql --version >/dev/null 2>&1; then
-            log "INFO" "Detectado MySQL/MariaDB: $CONTAINER"
+            log_info "Detectado MySQL/MariaDB: $CONTAINER"
 
             # Obter informações do container
             MYSQL_ROOT_PASSWORD=$(docker exec "$CONTAINER" printenv MYSQL_ROOT_PASSWORD 2>/dev/null || echo "")
@@ -181,7 +181,7 @@ else
 
                 BACKUP_FILE="$SESSION_DIR/${CONTAINER}_${DB}_mysql_${TIMESTAMP}.sql"
 
-                log "INFO" "Fazendo backup: $CONTAINER/$DB"
+                log_info "Fazendo backup: $CONTAINER/$DB"
 
                 if docker exec "$CONTAINER" mysqldump -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --single-transaction --quick --lock-tables=false "$DB" > "$BACKUP_FILE" 2>/dev/null; then
                     # Comprimir backup
@@ -255,7 +255,7 @@ de destino e execute os comandos acima.
 EOF
 
 # ========== CRIAR TARBALL CONSOLIDADO ==========
-log "INFO" "Criando arquivo consolidado..."
+log_info "Criando arquivo consolidado..."
 TARBALL="$BACKUP_DIR/databases-backup-$TIMESTAMP.tar.gz"
 
 cd "$BACKUP_DIR"
@@ -270,7 +270,7 @@ rm -rf "$SESSION_DIR"
 echo ""
 
 # ========== LIMPEZA DE BACKUPS ANTIGOS ==========
-log "INFO" "Removendo backups com mais de $RETENTION_DAYS dias..."
+log_info "Removendo backups com mais de $RETENTION_DAYS dias..."
 
 DELETED_COUNT=0
 while IFS= read -r OLD_BACKUP; do
@@ -281,13 +281,13 @@ done < <(find "$BACKUP_DIR" -name "databases-backup-*.tar.gz" -type f -mtime +$R
 if [ $DELETED_COUNT -gt 0 ]; then
     log_success "$DELETED_COUNT backup(s) antigo(s) removido(s)"
 else
-    log "INFO" "Nenhum backup antigo para remover"
+    log_info "Nenhum backup antigo para remover"
 fi
 
 echo ""
 
 # ========== RESUMO FINAL ==========
-log "SUCCESS" "========== BACKUP CONCLUÍDO =========="
+log_success "========== BACKUP CONCLUÍDO =========="
 echo ""
 echo "  📊 Estatísticas:"
 echo "     • Bancos processados: $TOTAL_DBS"

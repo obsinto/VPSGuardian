@@ -45,7 +45,7 @@ done
 ################################################################################
 
 if [ "$REMOTE_MODE" = true ]; then
-    log "INFO" "========== RESTAURAÇÃO REMOTA =========="
+    log_info "========== RESTAURAÇÃO REMOTA =========="
     echo ""
 
     if [ -z "$REMOTE_IP" ]; then
@@ -58,13 +58,13 @@ if [ "$REMOTE_MODE" = true ]; then
     read -p "$LOG_PREFIX [ INPUT ] SSH port (default: 22): " REMOTE_PORT
     REMOTE_PORT=${REMOTE_PORT:-22}
 
-    log "INFO" "Testing SSH connection to $REMOTE_USER@$REMOTE_IP..."
+    log_info "Testing SSH connection to $REMOTE_USER@$REMOTE_IP..."
     if ! ssh -p "$REMOTE_PORT" -o ConnectTimeout=10 "$REMOTE_USER@$REMOTE_IP" "exit" 2>/dev/null; then
-        log "ERROR" "SSH connection failed to $REMOTE_IP"
-        log "ERROR" "Restore Failed!"
+        log_error "SSH connection failed to $REMOTE_IP"
+        log_error "Restore Failed!"
         exit 1
     fi
-    log "SUCCESS" "SSH connection established"
+    log_success "SSH connection established"
     echo ""
 fi
 
@@ -81,48 +81,48 @@ fi
 ################################################################################
 
 if [ "$REMOTE_MODE" = true ]; then
-    log "INFO" "Checking volume on remote server..."
+    log_info "Checking volume on remote server..."
     if ! ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" "docker volume ls --quiet | grep -q '^$VOLUME_NAME$'" 2>/dev/null; then
-        log "ERROR" "Volume '$VOLUME_NAME' doesn't exist on remote server."
+        log_error "Volume '$VOLUME_NAME' doesn't exist on remote server."
 
         read -p "$LOG_PREFIX [ INPUT ] Do you want to create a new volume with the name '$VOLUME_NAME'? (y/N): " create_volume
         if [[ "$create_volume" == "y" ]]; then
-            log "INFO" "Creating volume '$VOLUME_NAME' on remote server..."
+            log_info "Creating volume '$VOLUME_NAME' on remote server..."
             ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" "docker volume create $VOLUME_NAME" || {
-                log "ERROR" "Failed to create volume '$VOLUME_NAME' on remote server"
-                log "ERROR" "Restore Failed!"
+                log_error "Failed to create volume '$VOLUME_NAME' on remote server"
+                log_error "Restore Failed!"
                 exit 1
             }
-            log "INFO" "Volume '$VOLUME_NAME' created successfully on remote server."
+            log_info "Volume '$VOLUME_NAME' created successfully on remote server."
         else
-            log "INFO" "Volume '$VOLUME_NAME' doesn't exist and user opted not to create it. Aborting restore."
-            log "ERROR" "Restore Failed!"
+            log_info "Volume '$VOLUME_NAME' doesn't exist and user opted not to create it. Aborting restore."
+            log_error "Restore Failed!"
             exit 1
         fi
     else
-        log "INFO" "Volume '$VOLUME_NAME' exists on remote server, continuing..."
+        log_info "Volume '$VOLUME_NAME' exists on remote server, continuing..."
     fi
 else
     # Verificar volume localmente
     if ! docker volume ls --quiet | grep -q "^$VOLUME_NAME$"; then
-        log "ERROR" "Volume '$VOLUME_NAME' doesn't exist."
+        log_error "Volume '$VOLUME_NAME' doesn't exist."
 
         read -p "$LOG_PREFIX [ INPUT ] Do you want to create a new volume with the name '$VOLUME_NAME'? (y/N): " create_volume
         if [[ "$create_volume" == "y" ]]; then
-            log "INFO" "Creating volume '$VOLUME_NAME'..."
+            log_info "Creating volume '$VOLUME_NAME'..."
             docker volume create "$VOLUME_NAME" || {
-                log "ERROR" "Failed to create volume '$VOLUME_NAME', aborting restore."
-                log "ERROR" "Restore Failed!"
+                log_error "Failed to create volume '$VOLUME_NAME', aborting restore."
+                log_error "Restore Failed!"
                 exit 1
             }
-            log "INFO" "Volume '$VOLUME_NAME' created successfully."
+            log_info "Volume '$VOLUME_NAME' created successfully."
         else
-            log "INFO" "Volume '$VOLUME_NAME' doesn't exist and user opted not to create it. Aborting restore."
-            log "ERROR" "Restore Failed!"
+            log_info "Volume '$VOLUME_NAME' doesn't exist and user opted not to create it. Aborting restore."
+            log_error "Restore Failed!"
             exit 1
         fi
     else
-        log "INFO" "Volume '$VOLUME_NAME' exists, continuing..."
+        log_info "Volume '$VOLUME_NAME' exists, continuing..."
     fi
 fi
 
@@ -133,20 +133,20 @@ fi
 if [ -z "$BACKUP_FILE" ]; then
     BACKUP_DIR="/root/volume-backups"
 
-    log "INFO" "Available backups in $BACKUP_DIR:"
+    log_info "Available backups in $BACKUP_DIR:"
     echo ""
 
     if [ ! -d "$BACKUP_DIR" ]; then
-        log "ERROR" "Backup directory not found: $BACKUP_DIR"
-        log "ERROR" "Restore Failed!"
+        log_error "Backup directory not found: $BACKUP_DIR"
+        log_error "Restore Failed!"
         exit 1
     fi
 
     BACKUPS=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null))
 
     if [ ${#BACKUPS[@]} -eq 0 ]; then
-        log "ERROR" "No backup files found in $BACKUP_DIR"
-        log "ERROR" "Restore Failed!"
+        log_error "No backup files found in $BACKUP_DIR"
+        log_error "Restore Failed!"
         exit 1
     fi
 
@@ -163,8 +163,8 @@ if [ -z "$BACKUP_FILE" ]; then
     read -p "$LOG_PREFIX [ INPUT ] Select backup number: " BACKUP_INDEX
 
     if [ -z "$BACKUP_INDEX" ] || [ "$BACKUP_INDEX" -ge "${#BACKUPS[@]}" ]; then
-        log "ERROR" "Invalid backup selection"
-        log "ERROR" "Restore Failed!"
+        log_error "Invalid backup selection"
+        log_error "Restore Failed!"
         exit 1
     fi
 
@@ -173,31 +173,31 @@ fi
 
 # Verificar se backup existe
 if [ ! -f "$BACKUP_FILE" ]; then
-    log "ERROR" "Backup file not found: $BACKUP_FILE"
-    log "ERROR" "Restore Failed!"
+    log_error "Backup file not found: $BACKUP_FILE"
+    log_error "Restore Failed!"
     exit 1
 fi
 
 BACKUP_FILENAME=$(basename "$BACKUP_FILE")
-log "INFO" "Backup file '$BACKUP_FILENAME' found, continuing..."
+log_info "Backup file '$BACKUP_FILENAME' found, continuing..."
 echo ""
 
 ################################################################################
 # SAFETY CONFIRMATION
 ################################################################################
 
-log "INFO" "Make sure containers using '$VOLUME_NAME' are stopped!"
+log_info "Make sure containers using '$VOLUME_NAME' are stopped!"
 if [ "$REMOTE_MODE" = true ]; then
-    log "INFO" "Restoration will be performed on remote server: $REMOTE_IP"
+    log_info "Restoration will be performed on remote server: $REMOTE_IP"
 fi
 echo ""
-log "INFO" "Volume: $VOLUME_NAME"
-log "INFO" "Backup: $BACKUP_FILENAME"
+log_info "Volume: $VOLUME_NAME"
+log_info "Backup: $BACKUP_FILENAME"
 echo ""
 
 read -p "$LOG_PREFIX [ INPUT ] Proceed with restore? (y/N): " confirm
 if [[ "$confirm" != "y" ]]; then
-    log "ERROR" "Restore Failed: cancelled by user."
+    log_error "Restore Failed: cancelled by user."
     exit 1
 fi
 
@@ -205,7 +205,7 @@ fi
 # RESTORE START
 ################################################################################
 
-log "INFO" "Restoring $BACKUP_FILENAME into volume: $VOLUME_NAME"
+log_info "Restoring $BACKUP_FILENAME into volume: $VOLUME_NAME"
 echo ""
 
 if [ "$REMOTE_MODE" = true ]; then
@@ -213,20 +213,20 @@ if [ "$REMOTE_MODE" = true ]; then
     # RESTAURAÇÃO REMOTA
     ################################################################################
 
-    log "INFO" "Transferring backup to remote server..."
+    log_info "Transferring backup to remote server..."
 
     REMOTE_BACKUP_DIR="/tmp/restore-$(date +%s)"
     ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" "mkdir -p $REMOTE_BACKUP_DIR"
 
     if scp -P "$REMOTE_PORT" "$BACKUP_FILE" "$REMOTE_USER@$REMOTE_IP:$REMOTE_BACKUP_DIR/"; then
-        log "SUCCESS" "Backup transferred successfully"
+        log_success "Backup transferred successfully"
     else
-        log "ERROR" "Failed to transfer backup to remote server"
-        log "ERROR" "Restore Failed!"
+        log_error "Failed to transfer backup to remote server"
+        log_error "Restore Failed!"
         exit 1
     fi
 
-    log "INFO" "Executing restore on remote server..."
+    log_info "Executing restore on remote server..."
 
     if ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" \
         "docker run --rm \
@@ -235,26 +235,26 @@ if [ "$REMOTE_MODE" = true ]; then
             busybox \
             sh -c 'cd /volume && tar xzf /backup/$BACKUP_FILENAME'"; then
 
-        log "SUCCESS" "Restore completed on remote server!"
+        log_success "Restore completed on remote server!"
 
         # Verificar restauração
-        log "INFO" "Verifying restored data..."
+        log_info "Verifying restored data..."
         FILE_COUNT=$(ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" \
             "docker run --rm -v '$VOLUME_NAME':/volume busybox find /volume -type f | wc -l")
         TOTAL_SIZE=$(ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" \
             "docker run --rm -v '$VOLUME_NAME':/volume busybox du -sh /volume | cut -f1")
 
-        log "SUCCESS" "Files restored: $FILE_COUNT"
-        log "SUCCESS" "Total size: $TOTAL_SIZE"
+        log_success "Files restored: $FILE_COUNT"
+        log_success "Total size: $TOTAL_SIZE"
 
         # Limpar arquivo temporário
-        log "INFO" "Cleaning up temporary files on remote server..."
+        log_info "Cleaning up temporary files on remote server..."
         ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" "rm -rf $REMOTE_BACKUP_DIR"
 
     else
-        log "ERROR" "Docker restore process failed on remote server"
+        log_error "Docker restore process failed on remote server"
         ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_IP" "rm -rf $REMOTE_BACKUP_DIR"
-        log "ERROR" "Restore Failed!"
+        log_error "Restore Failed!"
         exit 1
     fi
 
@@ -270,20 +270,20 @@ else
         -v "$BACKUP_DIR_ABS":/backup \
         busybox \
         sh -c "cd /volume && tar xzf /backup/$BACKUP_FILENAME" || {
-        log "ERROR" "Docker restore process failed, aborting."
-        log "ERROR" "Restore Failed!"
+        log_error "Docker restore process failed, aborting."
+        log_error "Restore Failed!"
         exit 1
     }
 
-    log "SUCCESS" "Restore completed!"
+    log_success "Restore completed!"
 
     # Verificar restauração
-    log "INFO" "Verifying restored data..."
+    log_info "Verifying restored data..."
     FILE_COUNT=$(docker run --rm -v "$VOLUME_NAME":/volume busybox find /volume -type f | wc -l)
     TOTAL_SIZE=$(docker run --rm -v "$VOLUME_NAME":/volume busybox du -sh /volume | cut -f1)
 
-    log "SUCCESS" "Files restored: $FILE_COUNT"
-    log "SUCCESS" "Total size: $TOTAL_SIZE"
+    log_success "Files restored: $FILE_COUNT"
+    log_success "Total size: $TOTAL_SIZE"
 
     # Perguntar se deseja listar arquivos
     echo ""
@@ -291,10 +291,10 @@ else
 
     if [ "$SHOW_FILES" = "y" ]; then
         echo ""
-        log "INFO" "Contents of volume '$VOLUME_NAME':"
+        log_info "Contents of volume '$VOLUME_NAME':"
         docker run --rm -v "$VOLUME_NAME":/volume busybox ls -lah /volume
     fi
 fi
 
 echo ""
-log "SUCCESS" "========== RESTORE COMPLETED SUCCESSFULLY =========="
+log_success "========== RESTORE COMPLETED SUCCESSFULLY =========="

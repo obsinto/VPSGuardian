@@ -39,7 +39,7 @@ if [ -z "$SSH_PORT" ]; then
     SSH_PORT=${SSH_PORT:-22}
 fi
 
-log "INFO" "Transfer configuration:"
+log_info "Transfer configuration:"
 echo "  From: $SOURCE_PATH"
 echo "  To: $SSH_USER@$SSH_IP:$DESTINATION_PATH"
 echo "  Port: $SSH_PORT"
@@ -47,24 +47,24 @@ echo ""
 
 # Verificar se origem existe
 if [ ! -d "$SOURCE_PATH" ]; then
-    log "ERROR" "Source directory not found: $SOURCE_PATH"
+    log_error "Source directory not found: $SOURCE_PATH"
     exit 1
 fi
 
 # Contar arquivos
 FILE_COUNT=$(find "$SOURCE_PATH" -type f -name "*.tar.gz" | wc -l)
 if [ $FILE_COUNT -eq 0 ]; then
-    log "ERROR" "No backup files found in $SOURCE_PATH"
+    log_error "No backup files found in $SOURCE_PATH"
     exit 1
 fi
 
 TOTAL_SIZE=$(du -sh "$SOURCE_PATH" | cut -f1)
-log "INFO" "Found $FILE_COUNT backup file(s), total size: $TOTAL_SIZE"
+log_info "Found $FILE_COUNT backup file(s), total size: $TOTAL_SIZE"
 echo ""
 
 read -p "$LOG_PREFIX [ INPUT ] Proceed with transfer? (yes/no): " CONFIRM
 if [ "$CONFIRM" != "yes" ]; then
-    log "INFO" "Transfer cancelled."
+    log_info "Transfer cancelled."
     exit 0
 fi
 
@@ -74,26 +74,26 @@ USING_KEY=false
 
 # Tentar autenticação com chave SSH
 if [ -f "$SSH_KEY" ]; then
-    log "INFO" "Trying SSH key authentication: $SSH_KEY"
+    log_info "Trying SSH key authentication: $SSH_KEY"
     ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=10 -p "$SSH_PORT" \
         "$SSH_USER@$SSH_IP" exit >/dev/null 2>&1
 
     if [ $? -eq 0 ]; then
-        log "SUCCESS" "SSH key authentication successful!"
+        log_success "SSH key authentication successful!"
         USING_KEY=true
     else
-        log "WARNING" "SSH key authentication failed."
+        log_warning "SSH key authentication failed."
     fi
 fi
 
 # Fallback para senha se chave falhar
 if [ "$USING_KEY" = false ]; then
-    log "INFO" "Falling back to password authentication."
+    log_info "Falling back to password authentication."
 
     # Verificar se expect está instalado
     if ! command -v expect >/dev/null 2>&1; then
-        log "ERROR" "Package 'expect' is required for password authentication."
-        log "INFO" "Install it with: sudo apt install expect"
+        log_error "Package 'expect' is required for password authentication."
+        log_info "Install it with: sudo apt install expect"
         exit 1
     fi
 
@@ -121,23 +121,23 @@ if [ "$USING_KEY" = false ]; then
         " >/dev/null 2>&1
 
         if [ $? -eq 0 ]; then
-            log "SUCCESS" "Password authentication successful!"
+            log_success "Password authentication successful!"
             break
         else
-            log "ERROR" "Invalid password. Please try again."
+            log_error "Invalid password. Please try again."
             retries=$((retries + 1))
         fi
     done
 
     if [ $retries -eq $MAX_RETRIES ]; then
-        log "ERROR" "Maximum password attempts reached. Aborting."
+        log_error "Maximum password attempts reached. Aborting."
         exit 1
     fi
 fi
 
 ### ========== PREPARE REMOTE DIRECTORY ==========
 
-log "INFO" "Preparing remote directory: $DESTINATION_PATH"
+log_info "Preparing remote directory: $DESTINATION_PATH"
 
 if [ "$USING_KEY" = true ]; then
     ssh -i "$SSH_KEY" -p "$SSH_PORT" "$SSH_USER@$SSH_IP" \
@@ -157,15 +157,15 @@ else
 fi
 
 if [ $PREP_RC -ne 0 ]; then
-    log "ERROR" "Failed to create remote directory."
+    log_error "Failed to create remote directory."
     exit 1
 fi
 
-log "SUCCESS" "Remote directory ready."
+log_success "Remote directory ready."
 
 ### ========== TRANSFER FILES ==========
 
-log "INFO" "Starting file transfer..."
+log_info "Starting file transfer..."
 echo ""
 
 SCP_LOG="/tmp/scp-transfer-$$.log"
@@ -192,16 +192,16 @@ fi
 echo ""
 
 if [ $SCP_RC -eq 0 ]; then
-    log "SUCCESS" "Transfer completed successfully!"
+    log_success "Transfer completed successfully!"
     echo ""
-    log "INFO" "Transferred: $FILE_COUNT file(s) ($TOTAL_SIZE)"
-    log "INFO" "Destination: $SSH_USER@$SSH_IP:$DESTINATION_PATH"
+    log_info "Transferred: $FILE_COUNT file(s) ($TOTAL_SIZE)"
+    log_info "Destination: $SSH_USER@$SSH_IP:$DESTINATION_PATH"
     rm -f "$SCP_LOG"
     exit 0
 else
-    log "ERROR" "Transfer failed!"
+    log_error "Transfer failed!"
     echo ""
-    log "INFO" "Error details:"
+    log_info "Error details:"
     while IFS= read -r line; do
         echo "  $line"
     done < "$SCP_LOG"

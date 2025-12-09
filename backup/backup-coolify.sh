@@ -2,15 +2,21 @@
 ################################################################################
 # Script de Backup Completo para Coolify
 # Complementa o script de manutenção
-# Versão: 1.0
+# Versão: 2.0 - Refatorado com bibliotecas compartilhadas
 # Compatível com o padrão de migração do Coolify
 ################################################################################
 
-# Configurações
-BACKUP_BASE_DIR="/root/coolify-backups"
+# Carregar bibliotecas compartilhadas
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/common.sh"
+
+# Inicializar script (cria diretórios, configura log)
+init_script
+
+# Configurações (usa variáveis de config/default.conf)
+BACKUP_BASE_DIR="${COOLIFY_BACKUP_DIR:-/var/backups/vpsguardian/coolify}"
 BACKUP_DIR="$BACKUP_BASE_DIR/$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="/var/log/manutencao/backup-coolify.log"
-RETENTION_DAYS=30  # Manter backups por 30 dias
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 
 # Diretórios e arquivos do Coolify
 COOLIFY_DATA_DIR="/data/coolify"
@@ -26,18 +32,6 @@ EMAIL=""
 # FUNÇÕES
 ################################################################################
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
-}
-
-log_error() {
-    echo "[ERRO] $1" | tee -a "$LOG_FILE"
-}
-
-log_success() {
-    echo "[OK] $1" | tee -a "$LOG_FILE"
-}
-
 notificar() {
     local mensagem="$1"
 
@@ -52,34 +46,27 @@ notificar() {
     fi
 }
 
-check_coolify_installed() {
-    if ! docker ps --format '{{.Names}}' | grep -q "coolify"; then
-        log_error "Coolify não está instalado ou não está rodando"
-        exit 1
-    fi
-    log_success "Coolify detectado e rodando"
-}
-
 ################################################################################
 # INÍCIO DO BACKUP
 ################################################################################
 
-log "========================================"
-log "INICIANDO BACKUP DO COOLIFY"
-log "========================================"
+log_section "VPS Guardian - Backup Coolify"
 
 # Verificar se Coolify está instalado
-check_coolify_installed
+check_docker || exit 1
+check_coolify || exit 1
+check_container_running "coolify-db" || exit 1
+log_success "Coolify detectado e rodando"
 
 # Criar diretório de backup
-mkdir -p "$BACKUP_DIR"
-log "Diretório de backup criado: $BACKUP_DIR"
+ensure_directory "$BACKUP_DIR" 700
+log_info "Diretório de backup criado: $BACKUP_DIR"
 
 ################################################################################
 # 1. BACKUP DO BANCO DE DADOS
 ################################################################################
 
-log "--- 1. Backup do banco de dados PostgreSQL ---"
+log_section "Backup do Banco de Dados PostgreSQL"
 
 DB_BACKUP_FILE="$BACKUP_DIR/coolify-db-$(date +%s).dmp"
 
@@ -99,7 +86,7 @@ fi
 # 2. BACKUP DAS SSH KEYS
 ################################################################################
 
-log "--- 2. Backup das SSH Keys ---"
+log_section "Backup das SSH Keys"
 
 if [ -d "$COOLIFY_SSH_DIR" ]; then
     cp -r "$COOLIFY_SSH_DIR" "$BACKUP_DIR/ssh-keys"
@@ -113,7 +100,7 @@ fi
 # 3. BACKUP DO .ENV E CONFIGURAÇÕES
 ################################################################################
 
-log "--- 3. Backup das configurações ---"
+log_section "Backup das Configurações"
 
 if [ -f "$COOLIFY_ENV_FILE" ]; then
     cp "$COOLIFY_ENV_FILE" "$BACKUP_DIR/.env"
@@ -143,12 +130,12 @@ fi
 # 4. BACKUP DE VOLUMES DOCKER (OPCIONAL)
 ################################################################################
 
-log "--- 4. Listando volumes Docker ---"
+log_section "Volumes Docker"
 
 # Criar arquivo com lista de volumes
 docker volume ls --format '{{.Name}}' > "$BACKUP_DIR/volumes-list.txt"
 VOLUMES_COUNT=$(wc -l < "$BACKUP_DIR/volumes-list.txt")
-log "Total de volumes Docker: $VOLUMES_COUNT"
+log_info "Total de volumes Docker: $VOLUMES_COUNT"
 
 # Se quiser fazer backup de volumes específicos, descomente abaixo
 # IMPORTANTE: Isso pode consumir MUITO espaço em disco
@@ -160,7 +147,7 @@ log "Total de volumes Docker: $VOLUMES_COUNT"
 #         continue
 #     fi
 #
-#     log "Backupeando volume: $volume"
+#     log_info "Backupeando volume: $volume"
 #     docker run --rm \
 #       -v "$volume":/volume \
 #       -v "$BACKUP_DIR/volumes":/backup \
@@ -168,13 +155,13 @@ log "Total de volumes Docker: $VOLUMES_COUNT"
 #       tar czf "/backup/${volume}.tar.gz" -C /volume .
 # done < "$BACKUP_DIR/volumes-list.txt"
 
-log "Backup de volumes desativado (economizar espaço). Habilite se necessário."
+log_info "Backup de volumes desativado (economizar espaço). Habilite se necessário."
 
 ################################################################################
 # 5. INFORMAÇÕES DO SISTEMA
 ################################################################################
 
-log "--- 5. Coletando informações do sistema ---"
+log_section "Informações do Sistema"
 
 cat > "$BACKUP_DIR/system-info.txt" <<EOF
 Sistema Operacional: $(lsb_release -d | cut -f2)
@@ -190,7 +177,7 @@ log_success "Informações do sistema coletadas"
 # 6. CRIAR ARQUIVO DE METADADOS
 ################################################################################
 
-log "--- 6. Criando arquivo de metadados ---"
+log_section "Arquivo de Metadados"
 
 COOLIFY_VERSION=$(docker ps --filter "name=coolify" --format '{{.Image}}' | grep coollabsio/coolify | head -n1)
 
@@ -249,7 +236,7 @@ log_success "Arquivo de metadados criado"
 # 7. COMPACTAR BACKUP
 ################################################################################
 
-log "--- 7. Compactando backup ---"
+log_section "Compactação"
 
 cd "$BACKUP_BASE_DIR"
 BACKUP_BASENAME=$(basename "$BACKUP_DIR")
@@ -261,7 +248,7 @@ if [ $? -eq 0 ]; then
 
     # Remover diretório não compactado para economizar espaço
     rm -rf "$BACKUP_DIR"
-    log "Diretório descompactado removido"
+    log_info "Diretório descompactado removido"
 else
     log_error "Falha ao compactar backup"
 fi
@@ -270,23 +257,21 @@ fi
 # 8. LIMPEZA DE BACKUPS ANTIGOS
 ################################################################################
 
-log "--- 8. Removendo backups antigos ---"
+log_section "Limpeza de Backups Antigos"
 
 BACKUPS_REMOVIDOS=$(find "$BACKUP_BASE_DIR" -name "*.tar.gz" -mtime +$RETENTION_DAYS -delete -print | wc -l)
 
 if [ "$BACKUPS_REMOVIDOS" -gt 0 ]; then
     log_success "$BACKUPS_REMOVIDOS backups antigos removidos (>${RETENTION_DAYS} dias)"
 else
-    log "Nenhum backup antigo para remover"
+    log_info "Nenhum backup antigo para remover"
 fi
 
 ################################################################################
 # 9. RELATÓRIO FINAL
 ################################################################################
 
-log "========================================"
-log "BACKUP CONCLUÍDO"
-log "========================================"
+log_section "BACKUP CONCLUÍDO"
 
 BACKUP_FINAL=$(ls -lht "$BACKUP_BASE_DIR"/*.tar.gz 2>/dev/null | head -1 | awk '{print $9, "("$5")"}')
 

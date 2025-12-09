@@ -15,7 +15,7 @@ log() {
 
 # Verificar se é root
 if [ "$EUID" -ne 0 ]; then
-    log "ERROR" "Este script deve ser executado como root (use sudo)"
+    log_error "Este script deve ser executado como root (use sudo)"
     exit 1
 fi
 
@@ -24,50 +24,50 @@ echo "║      CONFIGURAÇÃO DE UPDATES AUTOMÁTICOS DE SEGURANÇA      ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-log "INFO" "Este script irá configurar updates automáticos de segurança"
-log "INFO" "Otimizado para VPS com Docker e Coolify"
+log_info "Este script irá configurar updates automáticos de segurança"
+log_info "Otimizado para VPS com Docker e Coolify"
 echo ""
 
 # Instalar pacotes necessários
-log "INFO" "========== INSTALANDO PACOTES =========="
+log_info "========== INSTALANDO PACOTES =========="
 echo ""
 
-log "INFO" "Instalando unattended-upgrades e apt-listchanges..."
+log_info "Instalando unattended-upgrades e apt-listchanges..."
 apt update -qq
 apt install -y unattended-upgrades apt-listchanges
 
-log "SUCCESS" "Pacotes instalados"
+log_success "Pacotes instalados"
 echo ""
 
 # Ativar unattended-upgrades
-log "INFO" "========== ATIVANDO UNATTENDED-UPGRADES =========="
+log_info "========== ATIVANDO UNATTENDED-UPGRADES =========="
 echo ""
 
-log "INFO" "Ativando serviço..."
+log_info "Ativando serviço..."
 dpkg-reconfigure -plow unattended-upgrades
 
-log "SUCCESS" "Serviço ativado"
+log_success "Serviço ativado"
 echo ""
 
 # Backup da configuração original
-log "INFO" "========== BACKUP DA CONFIGURAÇÃO ORIGINAL =========="
+log_info "========== BACKUP DA CONFIGURAÇÃO ORIGINAL =========="
 echo ""
 
 CONFIG_FILE="/etc/apt/apt.conf.d/50unattended-upgrades"
 BACKUP_FILE="/etc/apt/apt.conf.d/50unattended-upgrades.bak"
 
 if [ ! -f "$BACKUP_FILE" ]; then
-    log "INFO" "Criando backup da configuração original..."
+    log_info "Criando backup da configuração original..."
     cp "$CONFIG_FILE" "$BACKUP_FILE"
-    log "SUCCESS" "Backup criado: $BACKUP_FILE"
+    log_success "Backup criado: $BACKUP_FILE"
 else
-    log "INFO" "Backup já existe: $BACKUP_FILE"
+    log_info "Backup já existe: $BACKUP_FILE"
 fi
 
 echo ""
 
 # Perguntar configurações ao usuário
-log "INFO" "========== CONFIGURAÇÃO PERSONALIZADA =========="
+log_info "========== CONFIGURAÇÃO PERSONALIZADA =========="
 echo ""
 
 read -p "$LOG_PREFIX [ INPUT ] Incluir updates regulares além de segurança? (y/N): " INCLUDE_UPDATES
@@ -86,7 +86,7 @@ echo ""
 # =========================================
 # SELEÇÃO DE PACOTES PARA BLACKLIST
 # =========================================
-log "INFO" "========== PROTEÇÃO DE PACOTES =========="
+log_info "========== PROTEÇÃO DE PACOTES =========="
 echo ""
 
 # Array com pacotes e descrições (ESCALÁVEL - fácil adicionar novos)
@@ -183,41 +183,41 @@ echo ""
 clear
 
 echo ""
-log "INFO" "Configurações escolhidas:"
-log "INFO" "  - Updates regulares: $([ "$INCLUDE_UPDATES" = "y" ] && echo "SIM" || echo "NÃO")"
-log "INFO" "  - Reinício automático: $([ "$AUTO_REBOOT" = "y" ] && echo "SIM às $REBOOT_TIME" || echo "NÃO")"
-log "INFO" "  - Email notificações: ${EMAIL_ADDRESS:-Nenhum}"
+log_info "Configurações escolhidas:"
+log_info "  - Updates regulares: $([ "$INCLUDE_UPDATES" = "y" ] && echo "SIM" || echo "NÃO")"
+log_info "  - Reinício automático: $([ "$AUTO_REBOOT" = "y" ] && echo "SIM às $REBOOT_TIME" || echo "NÃO")"
+log_info "  - Email notificações: ${EMAIL_ADDRESS:-Nenhum}"
 echo ""
-log "INFO" "Pacotes na BLACKLIST (protegidos de updates):"
+log_info "Pacotes na BLACKLIST (protegidos de updates):"
 
 # Contar e listar pacotes selecionados
 selected_count=0
 for i in "${!PACKAGES[@]}"; do
     if [ "${SELECTED[$i]}" -eq 1 ]; then
         IFS=':' read -r package_name description <<< "${PACKAGES[$i]}"
-        log "INFO" "    ✓ $package_name ($description)"
+        log_info "    ✓ $package_name ($description)"
         ((selected_count++))
     fi
 done
 
 if [ "$selected_count" -eq 0 ]; then
-    log "INFO" "    (Nenhum pacote selecionado)"
+    log_info "    (Nenhum pacote selecionado)"
 fi
 echo ""
 
 read -p "$LOG_PREFIX [ INPUT ] Continuar com estas configurações? (Y/n): " CONFIRM
 if [ "$CONFIRM" = "n" ]; then
-    log "INFO" "Configuração cancelada"
+    log_info "Configuração cancelada"
     exit 0
 fi
 
 echo ""
 
 # Criar configuração otimizada
-log "INFO" "========== CRIANDO CONFIGURAÇÃO OTIMIZADA =========="
+log_info "========== CRIANDO CONFIGURAÇÃO OTIMIZADA =========="
 echo ""
 
-log "INFO" "Escrevendo configuração em $CONFIG_FILE..."
+log_info "Escrevendo configuração em $CONFIG_FILE..."
 
 cat > "$CONFIG_FILE" << 'EOF'
 // Configuração otimizada de Updates Automáticos
@@ -334,7 +334,7 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
 
-log "SUCCESS" "Configuração criada com sucesso"
+log_success "Configuração criada com sucesso"
 echo ""
 
 # Aviso sobre Docker e Coolify
@@ -353,7 +353,7 @@ if [ "$COOLIFY_INSTALLED" = true ]; then
         echo "║                   ✅ PROTEÇÃO ATIVADA                      ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
-        log "SUCCESS" "Docker está PROTEGIDO (na BLACKLIST)"
+        log_success "Docker está PROTEGIDO (na BLACKLIST)"
         echo "  Motivo: Você usa Coolify, e updates de Docker podem:"
         echo "    • Causar downtime em aplicações"
         echo "    • Quebrar compatibilidade de containers"
@@ -389,12 +389,12 @@ fi
 echo ""
 
 # Criar configuração adicional
-log "INFO" "========== CONFIGURAÇÃO ADICIONAL =========="
+log_info "========== CONFIGURAÇÃO ADICIONAL =========="
 echo ""
 
 AUTO_UPGRADES_FILE="/etc/apt/apt.conf.d/20auto-upgrades"
 
-log "INFO" "Criando $AUTO_UPGRADES_FILE..."
+log_info "Criando $AUTO_UPGRADES_FILE..."
 
 cat > "$AUTO_UPGRADES_FILE" << 'EOF'
 // Habilitar updates automáticos
@@ -404,33 +404,33 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
 
-log "SUCCESS" "Configuração adicional criada"
+log_success "Configuração adicional criada"
 echo ""
 
 # Habilitar e iniciar serviços
-log "INFO" "========== HABILITANDO SERVIÇOS =========="
+log_info "========== HABILITANDO SERVIÇOS =========="
 echo ""
 
-log "INFO" "Habilitando timer do unattended-upgrades..."
+log_info "Habilitando timer do unattended-upgrades..."
 systemctl enable unattended-upgrades
 systemctl restart unattended-upgrades
 
-log "SUCCESS" "Serviços habilitados e iniciados"
+log_success "Serviços habilitados e iniciados"
 echo ""
 
 # Testar configuração
-log "INFO" "========== TESTANDO CONFIGURAÇÃO =========="
+log_info "========== TESTANDO CONFIGURAÇÃO =========="
 echo ""
 
-log "INFO" "Executando dry-run (simulação)..."
+log_info "Executando dry-run (simulação)..."
 unattended-upgrade --dry-run --debug
 
 echo ""
-log "SUCCESS" "Teste de configuração concluído"
+log_success "Teste de configuração concluído"
 echo ""
 
 # Resumo
-log "SUCCESS" "========== CONFIGURAÇÃO CONCLUÍDA =========="
+log_success "========== CONFIGURAÇÃO CONCLUÍDA =========="
 echo ""
 echo "  ✅ Unattended-upgrades instalado e configurado"
 echo "  ✅ Updates de segurança: HABILITADOS"
@@ -451,7 +451,7 @@ echo "     • $AUTO_UPGRADES_FILE"
 echo "     • Backup: $BACKUP_FILE"
 echo ""
 
-log "INFO" "========== COMANDOS ÚTEIS =========="
+log_info "========== COMANDOS ÚTEIS =========="
 echo ""
 echo "  # Ver status do serviço"
 echo "  sudo systemctl status unattended-upgrades"
@@ -472,7 +472,7 @@ echo "  # Restaurar backup"
 echo "  sudo cp $BACKUP_FILE $CONFIG_FILE"
 echo ""
 
-log "INFO" "========== PRÓXIMOS PASSOS =========="
+log_info "========== PRÓXIMOS PASSOS =========="
 echo ""
 echo "  1. Verifique os logs regularmente:"
 echo "     tail -f /var/log/unattended-upgrades/unattended-upgrades.log"
@@ -484,4 +484,4 @@ echo "  3. Configure email (se ainda não fez):"
 echo "     sudo apt install mailutils -y"
 echo ""
 
-log "SUCCESS" "Sistema de updates automáticos configurado e ativo! 🚀"
+log_success "Sistema de updates automáticos configurado e ativo! 🚀"

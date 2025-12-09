@@ -44,13 +44,13 @@ case $MODE in
         MODE_NAME="Validação Pós-Migração"
         ;;
     *)
-        log "ERROR" "Opção inválida"
+        log_error "Opção inválida"
         exit 1
         ;;
 esac
 
 echo ""
-log "INFO" "Modo selecionado: $MODE_NAME"
+log_info "Modo selecionado: $MODE_NAME"
 echo ""
 
 # Inicializar checklist
@@ -96,13 +96,13 @@ confirm_step() {
     # Se tem auto-check, executar
     if [ -n "$auto_check" ]; then
         echo ""
-        log "INFO" "Verificando automaticamente..."
+        log_info "Verificando automaticamente..."
         if eval "$auto_check" >/dev/null 2>&1; then
-            log "SUCCESS" "Verificação automática passou!"
+            log_success "Verificação automática passou!"
             mark_step "$step_description" "done"
             return 0
         else
-            log "WARNING" "Verificação automática falhou"
+            log_warning "Verificação automática falhou"
         fi
     fi
 
@@ -140,7 +140,7 @@ if [ "$MODE" = "1" ]; then
     confirm_step "Comando 'vps-guardian' funciona no terminal" "vps-guardian --version"
 
     echo ""
-    log "INFO" "Executar validação pré-migração..."
+    log_info "Executar validação pré-migração..."
     read -p "$LOG_PREFIX [ INPUT ] Deseja executar agora? (s/n): " run_pre
     if [ "$run_pre" = "s" ]; then
         ./scripts-auxiliares/validar-pre-migracao.sh
@@ -150,7 +150,7 @@ if [ "$MODE" = "1" ]; then
     fi
 
     echo ""
-    log "INFO" "Criar backup do Coolify..."
+    log_info "Criar backup do Coolify..."
     read -p "$LOG_PREFIX [ INPUT ] Deseja criar backup agora? (s/n): " run_backup
     if [ "$run_backup" = "s" ]; then
         ./backup/backup-coolify.sh
@@ -180,8 +180,8 @@ if [ "$MODE" = "1" ]; then
     echo "════════════════════════════════════════════════════════════"
 
     echo ""
-    log "WARNING" "Pronto para iniciar migração!"
-    log "INFO" "Isso irá:"
+    log_warning "Pronto para iniciar migração!"
+    log_info "Isso irá:"
     echo "  1. Instalar Coolify na VPS de teste"
     echo "  2. Transferir backup"
     echo "  3. Restaurar banco de dados"
@@ -195,7 +195,7 @@ if [ "$MODE" = "1" ]; then
         ./migrar/migrar-coolify.sh
         confirm_step "Script de migração executou sem erros" ""
     else
-        log "INFO" "Migração não iniciada. Execute manualmente:"
+        log_info "Migração não iniciada. Execute manualmente:"
         echo "  ./migrar/migrar-coolify.sh"
         confirm_step "Migração executada manualmente" ""
     fi
@@ -211,7 +211,7 @@ if [ "$MODE" = "1" ]; then
     echo "════════════════════════════════════════════════════════════"
 
     echo ""
-    log "INFO" "Executar validação pós-migração na VPS de teste..."
+    log_info "Executar validação pós-migração na VPS de teste..."
     read -p "$LOG_PREFIX [ INPUT ] Deseja executar agora? (s/n): " run_post
     if [ "$run_post" = "s" ]; then
         ./scripts-auxiliares/validar-pos-migracao.sh --remote "$TEST_VPS_IP"
@@ -221,7 +221,7 @@ if [ "$MODE" = "1" ]; then
     fi
 
     echo ""
-    log "INFO" "Testar acesso à interface web..."
+    log_info "Testar acesso à interface web..."
     echo "  URL: http://$TEST_VPS_IP:8000"
     echo ""
 
@@ -245,10 +245,10 @@ if [ "$MODE" = "1" ]; then
     echo "════════════════════════════════════════════════════════════"
 
     echo ""
-    log "INFO" "Configurar firewall na VPS de teste (opcional)..."
+    log_info "Configurar firewall na VPS de teste (opcional)..."
     read -p "$LOG_PREFIX [ INPUT ] Configurar firewall agora? (s/n): " config_fw
     if [ "$config_fw" = "s" ]; then
-        log "INFO" "Execute na VPS de TESTE:"
+        log_info "Execute na VPS de TESTE:"
         echo "  ssh root@$TEST_VPS_IP"
         echo "  cd /opt/vpsguardian"
         echo "  ./manutencao/firewall-perfil-padrao.sh"
@@ -273,7 +273,7 @@ if [ "$MODE" = "2" ]; then
     echo "════════════════════════════════════════════════════════════"
 
     echo ""
-    log "INFO" "Executando script de validação..."
+    log_info "Executando script de validação..."
     ./scripts-auxiliares/validar-pre-migracao.sh
 
     confirm_step "Sistema passou na validação pré-migração" ""
@@ -359,4 +359,4 @@ Taxa de conclusão: ${COMPLETION_RATE}%
 Data de conclusão: $(date)
 EOF
 
-log "SUCCESS" "Checklist finalizado!"
+log_success "Checklist finalizado!"
