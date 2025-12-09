@@ -29,7 +29,8 @@ vps-guardian
 |---------|-----------|---------|
 | `vps-guardian` | Abre menu principal interativo | `vps-guardian` |
 | `vps-guardian menu` | Abre menu principal (explícito) | `vps-guardian menu` |
-| `vps-guardian backup` | Faz backup completo do Coolify | `sudo vps-guardian backup` |
+| `vps-guardian backup` | Faz backup completo do Coolify (local) | `sudo vps-guardian backup` |
+| `vps-guardian backup-s3` | Faz backup completo + envia para S3 | `sudo vps-guardian backup-s3` |
 | `vps-guardian migrate` | Migra Coolify para novo servidor | `sudo vps-guardian migrate` |
 | `vps-guardian restore` | Restaura backup do Coolify | `sudo vps-guardian restore` |
 
@@ -60,19 +61,32 @@ Para facilitar, também foram criados aliases curtos:
 |-------|-------------|-----|
 | `firewall-vps` | `vps-guardian firewall` | `sudo firewall-vps` |
 | `backup-vps` | `vps-guardian backup` | `sudo backup-vps` |
+| `backup-s3-vps` | `vps-guardian backup-s3` | `sudo backup-s3-vps` |
 | `status-vps` | `vps-guardian status` | `status-vps` |
 
 ---
 
 ## 💡 Exemplos Práticos
 
-### Backup Diário
+### Backup Local Diário
 ```bash
-# Fazer backup manualmente
+# Fazer backup local manualmente
 sudo backup-vps
 
 # Ou usar comando completo
 sudo vps-guardian backup
+```
+
+### Backup para S3
+```bash
+# Modo interativo (primeira vez - configura S3)
+sudo backup-s3-vps
+
+# Ou usar comando completo
+sudo vps-guardian backup-s3
+
+# Modo automático (após configurar)
+sudo vps-guardian backup-s3 --config=/etc/vpsguardian/backup-s3.conf --auto
 ```
 
 ### Configurar Firewall

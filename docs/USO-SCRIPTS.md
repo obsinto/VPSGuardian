@@ -77,6 +77,82 @@ EMAIL="admin@example.com"  # Email
 
 ---
 
+### backup-coolify-s3.sh
+
+**Faz backup completo do Coolify E envia automaticamente para S3 (AWS, Backblaze, Wasabi, MinIO).**
+
+**Uso:**
+```bash
+# Modo interativo (primeira vez)
+sudo /opt/vpsguardian/backup/backup-coolify-s3.sh
+
+# Com arquivo de configuração
+sudo /opt/vpsguardian/backup/backup-coolify-s3.sh --config=/etc/vpsguardian/backup-s3.conf
+
+# Modo automático (cron)
+sudo /opt/vpsguardian/backup/backup-coolify-s3.sh --config=/etc/vpsguardian/backup-s3.conf --auto
+```
+
+**O que faz:**
+1. ✅ Backup completo do Coolify (DB + SSH keys + configs + nginx)
+2. ✅ Compacta em `.tar.gz`
+3. ✅ Criptografa com GPG (opcional)
+4. ✅ Envia para S3 automaticamente
+5. ✅ Configura lifecycle (expiração automática)
+6. ✅ Notifica via Discord/Telegram (opcional)
+7. ✅ Limpa backups locais antigos (>7 dias)
+
+**Provedores suportados:**
+- AWS S3
+- Backblaze B2 ⭐ (mais barato: $0.005/GB/mês)
+- Wasabi (transferência ilimitada)
+- MinIO (self-hosted)
+- Qualquer S3-compatible
+
+**Configuração:**
+```bash
+# Criar arquivo de configuração
+sudo nano /etc/vpsguardian/backup-s3.conf
+
+# Exemplo (Backblaze B2):
+S3_PROVIDER="backblaze"
+S3_BUCKET="coolify-backups"
+S3_REGION="us-west-002"
+S3_ENDPOINT="https://s3.us-west-002.backblazeb2.com"
+S3_ACCESS_KEY="seu_access_key"
+S3_SECRET_KEY="seu_secret_key"
+
+# Criptografia (recomendado)
+ENCRYPT_BACKUP=true
+GPG_RECIPIENT="seu-email@example.com"
+
+# Lifecycle (expirar backups antigos)
+CONFIGURE_LIFECYCLE=true
+LIFECYCLE_DAYS=90
+```
+
+**Output:**
+- Backup local temporário: `/var/backups/vpsguardian/coolify/`
+- Backup S3: `s3://bucket/backups/coolify/20241209_153045.tar.gz`
+- Backup criptografado: `s3://bucket/backups/coolify/20241209_153045.tar.gz.gpg`
+
+**Logs:**
+```bash
+tail -f /var/log/vpsguardian/backup-coolify-s3.log
+```
+
+**Automatizar (cron):**
+```bash
+# Backup diário às 2h da manhã
+0 2 * * * /opt/vpsguardian/backup/backup-coolify-s3.sh --config=/etc/vpsguardian/backup-s3.conf --auto
+```
+
+**Tempo estimado:** 5-10 minutos (depende da velocidade de upload)
+
+**Documentação completa:** [docs/BACKUP-S3-GUIDE.md](BACKUP-S3-GUIDE.md)
+
+---
+
 ### backup-databases.sh
 
 **Faz backup de bancos de dados individuais (PostgreSQL e MySQL).**

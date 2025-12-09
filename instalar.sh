@@ -366,7 +366,8 @@ show_help() {
     echo ""
     echo "Comandos Principais:"
     echo "  menu              📋 Abre o menu principal interativo"
-    echo "  backup            📦 Faz backup completo do Coolify"
+    echo "  backup            📦 Faz backup completo do Coolify (local)"
+    echo "  backup-s3         ☁️  Faz backup completo + envia para S3"
     echo "  migrate           🚀 Migra Coolify para novo servidor"
     echo "  restore           ♻️  Restaura backup do Coolify"
     echo ""
@@ -383,7 +384,8 @@ show_help() {
     echo ""
     echo "Exemplos:"
     echo "  vps-guardian              # Abre menu principal"
-    echo "  vps-guardian backup       # Faz backup do Coolify"
+    echo "  vps-guardian backup       # Backup local do Coolify"
+    echo "  vps-guardian backup-s3    # Backup + upload para S3"
     echo "  vps-guardian firewall     # Gerenciar firewall (interativo)"
     echo "  vps-guardian migrate      # Migrar para novo servidor"
     echo "  vps-guardian status       # Ver status do sistema"
@@ -391,6 +393,7 @@ show_help() {
     echo "Aliases Disponíveis:"
     echo "  firewall-vps      = vps-guardian firewall"
     echo "  backup-vps        = vps-guardian backup"
+    echo "  backup-s3-vps     = vps-guardian backup-s3"
     echo "  status-vps        = vps-guardian status"
     echo ""
 }
@@ -414,6 +417,14 @@ case "$1" in
         ;;
     backup)
         exec sudo bash "$INSTALL_ROOT/backup/backup-coolify.sh" "${@:2}"
+        ;;
+    backup-s3)
+        if [ -f "$INSTALL_ROOT/backup/backup-coolify-s3.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/backup/backup-coolify-s3.sh" "${@:2}"
+        else
+            echo "❌ Script de backup S3 não encontrado"
+            exit 1
+        fi
         ;;
     status)
         if [ -f "$INSTALL_ROOT/scripts-auxiliares/verificar-saude-completa.sh" ]; then
@@ -518,7 +529,14 @@ exec vps-guardian status "$@"
 EOF
     chmod +x /usr/local/bin/status-vps
 
-    log_success "Aliases criados: firewall-vps, backup-vps, status-vps"
+    # backup-s3-vps
+    cat > /usr/local/bin/backup-s3-vps << 'EOF'
+#!/bin/bash
+exec vps-guardian backup-s3 "$@"
+EOF
+    chmod +x /usr/local/bin/backup-s3-vps
+
+    log_success "Aliases criados: firewall-vps, backup-vps, backup-s3-vps, status-vps"
     echo ""
     log_info "Teste os comandos:"
     echo "  • vps-guardian --help"
