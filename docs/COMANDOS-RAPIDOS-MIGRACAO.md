@@ -5,8 +5,8 @@
 ```bash
 # VPS Principal - Instalar sistema
 cd /opt
-git clone <seu-repo> manutencao_backup_vps
-cd manutencao_backup_vps
+git clone <seu-repo> vpsguardian
+cd vpsguardian
 ./instalador.sh
 ```
 
@@ -33,7 +33,7 @@ ls -lh /root/coolify-backups/
 vps-guardian backup
 
 # OU manualmente
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./backup/backup-coolify.sh
 
 # Verificar backup criado
@@ -68,7 +68,7 @@ ssh-add ~/.ssh/id_rsa
 
 ```bash
 # Migração completa
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 
 # Migrar volumes específicos
@@ -88,7 +88,7 @@ cd /opt/manutencao_backup_vps
 
 # Validação local (na VPS de Teste)
 ssh root@IP_VPS_TESTE
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./scripts-auxiliares/validar-pos-migracao.sh
 ```
 
@@ -318,7 +318,7 @@ cp -r ssh-keys/* /data/coolify/ssh/keys/
 vps-guardian firewall
 
 # OU manualmente
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./manutencao/configurar-firewall.sh
 
 # Verificar regras do firewall
@@ -354,7 +354,7 @@ docker compose down -v
 rm -rf /data/coolify
 
 # Na VPS PRINCIPAL - Migrar novamente
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 
 # Validar novamente
@@ -370,7 +370,7 @@ cd /opt/manutencao_backup_vps
 vps-guardian status > /tmp/status-pos-migracao.txt
 
 # Logs de migração
-cat /opt/manutencao_backup_vps/migration-logs/migration-agent-*.log
+cat /opt/vpsguardian/migration-logs/migration-agent-*.log
 
 # Logs de validação
 cat /tmp/post-migration-validation-*.log

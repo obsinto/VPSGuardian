@@ -12,8 +12,8 @@ Testar a migração do Coolify da VPS Principal para VPS de Teste com **100% de 
 ```bash
 # Na VPS PRINCIPAL
 cd /opt
-git clone https://github.com/SEU_USUARIO/manutencao_backup_vps.git
-cd manutencao_backup_vps
+git clone https://github.com/SEU_USUARIO/vpsguardian.git
+cd vpsguardian
 ./instalador.sh
 ```
 
@@ -25,7 +25,7 @@ vps-guardian
 # Opção: Executar scripts auxiliares → Validar pré-migração
 
 # OU manualmente:
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./scripts-auxiliares/validar-pre-migracao.sh
 ```
 
@@ -38,7 +38,7 @@ cd /opt/manutencao_backup_vps
 vps-guardian backup
 
 # OU manualmente:
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./backup/backup-coolify.sh
 ```
 
@@ -63,7 +63,7 @@ ssh root@[IP_VPS_TESTE] "echo 'SSH OK'"
 
 ```bash
 # Na VPS PRINCIPAL
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 
 # Quando solicitado:
@@ -90,7 +90,7 @@ cd /opt/manutencao_backup_vps
 
 ```bash
 # Na VPS PRINCIPAL
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./scripts-auxiliares/validar-pos-migracao.sh --remote [IP_VPS_TESTE]
 ```
 
@@ -136,7 +136,7 @@ Para acompanhar todo o processo passo a passo:
 
 ```bash
 # Na VPS PRINCIPAL
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./scripts-auxiliares/checklist-migracao.sh
 
 # Selecionar:
@@ -162,7 +162,7 @@ vps-guardian backup
 ls -lh /root/coolify-backups/
 
 # Executar migração
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 ```
 
@@ -295,7 +295,7 @@ Para mais detalhes, consultar:
 
 **Logs importantes:**
 - Pré-migração: `/tmp/pre-migration-validation-*.log`
-- Migração: `/opt/manutencao_backup_vps/migration-logs/`
+- Migração: `/opt/vpsguardian/migration-logs/`
 - Pós-migração: `/tmp/post-migration-validation-*.log`
 - Coolify: `docker logs coolify`
 - Banco: `docker logs coolify-db`

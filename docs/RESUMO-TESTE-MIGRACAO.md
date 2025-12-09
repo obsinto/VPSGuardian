@@ -11,8 +11,8 @@ Você tem uma **VPS principal** com Coolify rodando e alugou uma **VPS de teste*
 
 ```bash
 # 1. Instalar sistema
-cd /opt && git clone <seu-repo> manutencao_backup_vps
-cd manutencao_backup_vps && ./instalador.sh
+cd /opt && git clone <seu-repo> vpsguardian
+cd vpsguardian && ./instalador.sh
 
 # 2. Criar backup
 vps-guardian backup
@@ -35,8 +35,8 @@ ssh root@SEU_IP_PRINCIPAL
 
 # Instalar VPS Guardian
 cd /opt
-git clone https://github.com/SEU_USUARIO/manutencao_backup_vps.git
-cd manutencao_backup_vps
+git clone https://github.com/SEU_USUARIO/vpsguardian.git
+cd vpsguardian
 ./instalador.sh
 
 # Confirmar instalação
@@ -63,7 +63,7 @@ vps-guardian --version
 vps-guardian backup
 
 # OU manualmente
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./backup/backup-coolify.sh
 
 # Verificar
@@ -89,7 +89,7 @@ ssh root@IP_VPS_TESTE "echo 'SSH OK'"
 
 ```bash
 # Na VPS PRINCIPAL
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 
 # Quando solicitado:
@@ -148,7 +148,7 @@ http://IP_VPS_TESTE:8000
 Para um guia passo a passo completo com acompanhamento:
 
 ```bash
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./scripts-auxiliares/checklist-migracao.sh
 
 # Selecionar: [1] Migração completa
@@ -310,7 +310,7 @@ docker logs coolify-db --tail 100
 ### Logs Importantes:
 ```bash
 # Logs de migração
-ls -lh /opt/manutencao_backup_vps/migration-logs/
+ls -lh /opt/vpsguardian/migration-logs/
 
 # Logs de validação
 ls -lh /tmp/*migration-validation*.log

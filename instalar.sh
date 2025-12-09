@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ################################################################################
-# Script de Instalação Inteligente - Sistema de Manutenção, Backup e Migração
+# Script de Instalação - VPS Guardian
 # Propósito: Instalação escalável e configurável do sistema
 # Uso: sudo ./instalar.sh
 #
@@ -78,7 +78,7 @@ verify_directory() {
 # CARREGAMENTO DE CONFIGURAÇÕES ANTERIORES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-INSTALL_CONFIG="/opt/manutencao_backup_vps/.install.conf"
+INSTALL_CONFIG="/opt/vpsguardian/.install.conf"
 INSTALL_ROOT=""
 BACKUP_ROOT=""
 LOG_ROOT=""
@@ -101,9 +101,9 @@ show_banner() {
     echo -e "${CYAN}"
     echo "╔════════════════════════════════════════════════════════════╗"
     echo "║                                                            ║"
-    echo "║  🚀 INSTALADOR - Sistema de Manutenção e Backup VPS       ║"
+    echo "║             🛡️  VPS GUARDIAN - INSTALADOR                  ║"
     echo "║                                                            ║"
-    echo "║     Instalação escalável, interativa e profissional       ║"
+    echo "║     Sistema completo de Backup, Manutenção e Migração     ║"
     echo "║                                                            ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -163,21 +163,21 @@ interactive_configuration() {
     log_section "CONFIGURAÇÃO INTERATIVA"
 
     # Diretório de Instalação
-    log_info "Diretório de instalação (padrão: /opt/manutencao_backup_vps)"
-    read -p "Caminho: " -i "/opt/manutencao_backup_vps" -e INSTALL_ROOT
-    INSTALL_ROOT="${INSTALL_ROOT:-/opt/manutencao_backup_vps}"
+    log_info "Diretório de instalação (padrão: /opt/vpsguardian)"
+    read -p "Caminho: " -i "/opt/vpsguardian" -e INSTALL_ROOT
+    INSTALL_ROOT="${INSTALL_ROOT:-/opt/vpsguardian}"
 
     # Diretório de Backups
     log_info ""
-    log_info "Diretório de backups (padrão: /var/backups/manutencao)"
-    read -p "Caminho: " -i "/var/backups/manutencao" -e BACKUP_ROOT
-    BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/manutencao}"
+    log_info "Diretório de backups (padrão: /var/backups/vpsguardian)"
+    read -p "Caminho: " -i "/var/backups/vpsguardian" -e BACKUP_ROOT
+    BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/vpsguardian}"
 
     # Diretório de Logs
     log_info ""
-    log_info "Diretório de logs (padrão: /var/log/manutencao)"
-    read -p "Caminho: " -i "/var/log/manutencao" -e LOG_ROOT
-    LOG_ROOT="${LOG_ROOT:-/var/log/manutencao}"
+    log_info "Diretório de logs (padrão: /var/log/vpsguardian)"
+    read -p "Caminho: " -i "/var/log/vpsguardian" -e LOG_ROOT
+    LOG_ROOT="${LOG_ROOT:-/var/log/vpsguardian}"
 
     # Tipo de links
     log_info ""
@@ -345,7 +345,7 @@ create_global_commands() {
 #!/bin/bash
 
 # Determinar diretório de configuração
-INSTALL_CONFIG="/opt/manutencao_backup_vps/.install.conf"
+INSTALL_CONFIG="/opt/vpsguardian/.install.conf"
 if [ ! -f "$INSTALL_CONFIG" ]; then
     echo "❌ Erro: VPS Guardian não está instalado"
     echo "Execute: sudo ./instalar.sh"
@@ -487,8 +487,8 @@ verify_installation() {
     done
 
     # Verificar comandos globais
-    if command -v manutencao-menu &> /dev/null; then
-        log_success "Comando global OK: manutencao-menu"
+    if command -v vps-guardian &> /dev/null; then
+        log_success "Comando global OK: vps-guardian"
     fi
 
     echo ""
@@ -566,7 +566,7 @@ uninstall() {
     log_success "Scripts removidos"
 
     log_info "Removendo comandos globais..."
-    rm -f /usr/local/bin/manutencao-{menu,backup,status}
+    rm -f /usr/local/bin/vps-guardian
     log_success "Comandos globais removidos"
 
     log_info "Limpando configuração..."

@@ -23,8 +23,8 @@ Garantir que a migração do Coolify e volumes Docker funcione com 100% de suces
 
 ```bash
 cd /opt
-git clone https://github.com/SEU_USUARIO/manutencao_backup_vps.git
-cd manutencao_backup_vps
+git clone https://github.com/SEU_USUARIO/vpsguardian.git
+cd vpsguardian
 chmod +x instalador.sh
 ./instalador.sh
 ```
@@ -39,7 +39,7 @@ chmod +x instalador.sh
 ```bash
 vps-guardian backup
 # Ou manualmente:
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./backup/backup-coolify.sh
 ```
 
@@ -128,7 +128,7 @@ docker --version
 Na **VPS Principal**:
 
 ```bash
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 ```
 
@@ -211,7 +211,7 @@ Se você fez backup de volumes adicionais:
 Na **VPS Principal**:
 
 ```bash
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-volumes.sh
 ```
 
@@ -255,7 +255,7 @@ docker volume rm coolify-db
 
 # Agora, tentar restaurar novamente
 # Na VPS PRINCIPAL, executar novamente:
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./migrar/migrar-coolify.sh
 ```
 
@@ -274,7 +274,7 @@ Na **VPS de Teste**, fazer uma mudança e criar novo backup:
 # (criar um novo projeto, por exemplo)
 
 # 2. Criar backup local na VPS de teste
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./backup/backup-coolify.sh
 
 # 3. Verificar que novo backup foi criado
@@ -502,7 +502,7 @@ docker compose restart
 
 ## Contato e Suporte
 
-- Logs de migração: `/opt/manutencao_backup_vps/migration-logs/`
+- Logs de migração: `/opt/vpsguardian/migration-logs/`
 - Logs do Coolify: `docker logs coolify`
 - Status do sistema: `vps-guardian status`
 

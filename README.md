@@ -76,7 +76,7 @@ Um **sistema completo e profissional** para gerenciar backups, manutenção, seg
 ## 🏗️ Arquitetura
 
 ```
-manutencao_backup_vps/
+vpsguardian/
 ├── menu-principal.sh                    ← 🎯 PONTO DE ENTRADA
 ├── backup/                              ← Backups inteligentes
 │   ├── backup-coolify.sh
@@ -107,8 +107,8 @@ manutencao_backup_vps/
 ### 1️⃣ Instalação Rápida
 ```bash
 cd /opt
-git clone <seu-repositorio> manutencao_backup_vps
-cd manutencao_backup_vps
+git clone <seu-repositorio> vpsguardian
+cd vpsguardian
 ./instalador.sh
 ```
 
@@ -118,7 +118,7 @@ cd manutencao_backup_vps
 vps-guardian
 
 # OU manualmente
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 ./menu-principal.sh
 ```
 
@@ -413,8 +413,8 @@ Consulte o **[Manual Completo do Sistema](docs/MANUAL-COMPLETO-DO-SISTEMA.md)** 
 
 ```bash
 # 1. Clonar
-git clone <seu-repositorio> /opt/manutencao_backup_vps
-cd /opt/manutencao_backup_vps
+git clone <seu-repositorio> /opt/vpsguardian
+cd /opt/vpsguardian
 
 # 2. Permissões
 chmod +x menu-principal.sh
@@ -425,7 +425,7 @@ chmod +x scripts-auxiliares/*.sh
 
 # 3. Configurar acesso sudo sem senha (OPCIONAL)
 # sudo visudo
-# Adicionar: seu-usuario ALL=(ALL) NOPASSWD: /opt/manutencao_backup_vps/*
+# Adicionar: seu-usuario ALL=(ALL) NOPASSWD: /opt/vpsguardian/*
 
 # 4. Executar
 sudo bash menu-principal.sh
@@ -438,7 +438,7 @@ sudo bash menu-principal.sh
 O sistema é auto-contido. Para atualizar:
 
 ```bash
-cd /opt/manutencao_backup_vps
+cd /opt/vpsguardian
 git pull origin main
 chmod +x **/*.sh
 ```
