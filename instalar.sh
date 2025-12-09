@@ -364,21 +364,34 @@ show_help() {
     echo ""
     echo "Uso: vps-guardian [comando] [opções]"
     echo ""
-    echo "Comandos:"
+    echo "Comandos Principais:"
     echo "  menu              📋 Abre o menu principal interativo"
     echo "  backup            📦 Faz backup completo do Coolify"
+    echo "  migrate           🚀 Migra Coolify para novo servidor"
+    echo "  restore           ♻️  Restaura backup do Coolify"
+    echo ""
+    echo "Manutenção:"
     echo "  status            📊 Mostra status completo do sistema"
-    echo "  firewall          🔧 Configura firewall (UFW)"
+    echo "  firewall          🔥 Gerenciador interativo de firewall"
+    echo "  maintenance       🔧 Executa manutenção completa"
     echo "  updates           🔄 Configura updates automáticos"
-    echo "  cron              ⏰ Configura cron jobs"
+    echo ""
+    echo "Configuração:"
+    echo "  cron              ⏰ Configura cron jobs para backups"
     echo "  --help, -h        ❓ Mostra esta ajuda"
     echo "  --version, -v     ℹ️  Mostra versão"
     echo ""
     echo "Exemplos:"
     echo "  vps-guardian              # Abre menu principal"
-    echo "  vps-guardian backup       # Faz backup"
-    echo "  vps-guardian status       # Ver status"
-    echo "  sudo vps-guardian firewall # Configurar firewall"
+    echo "  vps-guardian backup       # Faz backup do Coolify"
+    echo "  vps-guardian firewall     # Gerenciar firewall (interativo)"
+    echo "  vps-guardian migrate      # Migrar para novo servidor"
+    echo "  vps-guardian status       # Ver status do sistema"
+    echo ""
+    echo "Aliases Disponíveis:"
+    echo "  firewall-vps      = vps-guardian firewall"
+    echo "  backup-vps        = vps-guardian backup"
+    echo "  status-vps        = vps-guardian status"
     echo ""
 }
 
@@ -411,10 +424,37 @@ case "$1" in
         fi
         ;;
     firewall)
-        if [ -f "$INSTALL_ROOT/manutencao/firewall-perfil-padrao.sh" ]; then
+        # Prioriza o firewall interativo se existir
+        if [ -f "$INSTALL_ROOT/manutencao/firewall-interativo.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/manutencao/firewall-interativo.sh" "${@:2}"
+        elif [ -f "$INSTALL_ROOT/manutencao/firewall-perfil-padrao.sh" ]; then
             exec sudo bash "$INSTALL_ROOT/manutencao/firewall-perfil-padrao.sh" "${@:2}"
         else
             echo "❌ Script de firewall não encontrado"
+            exit 1
+        fi
+        ;;
+    migrate)
+        if [ -f "$INSTALL_ROOT/migrar/migrar-coolify.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/migrar/migrar-coolify.sh" "${@:2}"
+        else
+            echo "❌ Script de migração não encontrado"
+            exit 1
+        fi
+        ;;
+    restore)
+        if [ -f "$INSTALL_ROOT/backup/restaurar-coolify-remoto.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/backup/restaurar-coolify-remoto.sh" "${@:2}"
+        else
+            echo "❌ Script de restauração não encontrado"
+            exit 1
+        fi
+        ;;
+    maintenance)
+        if [ -f "$INSTALL_ROOT/manutencao/manutencao-completa.sh" ]; then
+            exec sudo bash "$INSTALL_ROOT/manutencao/manutencao-completa.sh" "${@:2}"
+        else
+            echo "❌ Script de manutenção não encontrado"
             exit 1
         fi
         ;;
@@ -451,8 +491,40 @@ WRAPPER_EOF
 
     chmod +x /usr/local/bin/vps-guardian
     log_success "Comando global criado: vps-guardian"
+
+    # Criar aliases úteis
+    log_info "Criando aliases úteis..."
+
+    # firewall-vps
+    ln -sf /usr/local/bin/vps-guardian /usr/local/bin/firewall-vps
+    cat > /usr/local/bin/.firewall-vps-wrapper << 'EOF'
+#!/bin/bash
+exec vps-guardian firewall "$@"
+EOF
+    chmod +x /usr/local/bin/.firewall-vps-wrapper
+    ln -sf /usr/local/bin/.firewall-vps-wrapper /usr/local/bin/firewall-vps
+
+    # backup-vps
+    cat > /usr/local/bin/backup-vps << 'EOF'
+#!/bin/bash
+exec vps-guardian backup "$@"
+EOF
+    chmod +x /usr/local/bin/backup-vps
+
+    # status-vps
+    cat > /usr/local/bin/status-vps << 'EOF'
+#!/bin/bash
+exec vps-guardian status "$@"
+EOF
+    chmod +x /usr/local/bin/status-vps
+
+    log_success "Aliases criados: firewall-vps, backup-vps, status-vps"
     echo ""
-    log_info "Teste: vps-guardian --help"
+    log_info "Teste os comandos:"
+    echo "  • vps-guardian --help"
+    echo "  • firewall-vps (abre firewall interativo)"
+    echo "  • backup-vps (faz backup)"
+    echo "  • status-vps (mostra status)"
     echo ""
 }
 
