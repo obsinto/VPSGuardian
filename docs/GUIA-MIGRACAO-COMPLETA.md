@@ -25,6 +25,29 @@ Migre seu Coolify para um novo servidor de forma segura e sem perda de dados.
 
 **Tempo:** 30min-2h | **Downtime:** Sim
 
+### Modo A: Totalmente Automático (Zero Prompts)
+
+**Para migração programada/CI-CD:**
+
+```bash
+# 1. Criar arquivo de configuração
+cp /opt/vpsguardian/config/migration.conf.example /opt/vpsguardian/config/migration.conf
+
+# 2. Editar configurações
+nano /opt/vpsguardian/config/migration.conf
+
+# Conteúdo mínimo:
+# NEW_SERVER_IP="192.168.1.100"
+# SSH_PRIVATE_KEY_PATH="/root/.ssh/id_rsa"
+
+# 3. Executar migração automática
+sudo /opt/vpsguardian/migrar/migrar-coolify.sh --config=/opt/vpsguardian/config/migration.conf --auto
+
+# Pronto! Migração executada sem prompts
+```
+
+### Modo B: Interativo (Com Confirmações)
+
 ### Passo 1: Preparar Servidor Novo
 
 ```bash
@@ -60,6 +83,7 @@ ls -lh /var/backups/vpsguardian/coolify/
 
 ### Passo 3: Executar Migração (Servidor Antigo)
 
+**Opção 1 - Interativo:**
 ```bash
 vps-guardian
 # → 4 (Migração)
@@ -68,7 +92,24 @@ vps-guardian
 # OU
 sudo /opt/vpsguardian/migrar/migrar-coolify.sh
 
-# Confirmar com: SIM (em maiúsculas)
+# Confirmar com: YES (em maiúsculas)
+```
+
+**Opção 2 - Automático com config:**
+```bash
+# Configurar primeiro
+export NEW_SERVER_IP="192.168.1.100"
+export SSH_PRIVATE_KEY_PATH="/root/.ssh/id_rsa"
+
+# Executar
+sudo /opt/vpsguardian/migrar/migrar-coolify.sh --auto
+```
+
+**Opção 3 - Arquivo de configuração:**
+```bash
+sudo /opt/vpsguardian/migrar/migrar-coolify.sh \
+  --config=/opt/vpsguardian/config/migration.conf \
+  --auto
 ```
 
 ### Passo 4: Validar (Servidor Novo)

@@ -2,37 +2,92 @@
 ################################################################################
 # Script: migrar-coolify.sh
 # Propósito: Migrar Coolify completo para um novo servidor usando backups existentes
-# Uso: ./migrar-coolify.sh
+# Uso: ./migrar-coolify.sh [--config=/path/to/config] [--auto]
 ################################################################################
 
 # Carregar bibliotecas compartilhadas
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-### ========== CONFIGURAÇÃO ==========
-# Estas variáveis podem ser editadas diretamente ou passadas via prompts
+### ========== CONFIGURAÇÃO PADRÃO ==========
+# Pode ser sobrescrito por arquivo de configuração ou variáveis de ambiente
 
 # Servidor de destino
-NEW_SERVER_IP=""
-NEW_SERVER_USER="root"
-NEW_SERVER_PORT="22"
-NEW_SERVER_AUTH_KEYS_FILE="/root/.ssh/authorized_keys"
+NEW_SERVER_IP="${NEW_SERVER_IP:-}"
+NEW_SERVER_USER="${NEW_SERVER_USER:-root}"
+NEW_SERVER_PORT="${NEW_SERVER_PORT:-22}"
+NEW_SERVER_AUTH_KEYS_FILE="${NEW_SERVER_AUTH_KEYS_FILE:-/root/.ssh/authorized_keys}"
 
 # Autenticação SSH
-SSH_PRIVATE_KEY_PATH="/root/.ssh/id_rsa"
-LOCAL_AUTH_KEYS_FILE="/root/.ssh/authorized_keys"
+SSH_PRIVATE_KEY_PATH="${SSH_PRIVATE_KEY_PATH:-/root/.ssh/id_rsa}"
+LOCAL_AUTH_KEYS_FILE="${LOCAL_AUTH_KEYS_FILE:-/root/.ssh/authorized_keys}"
 
-# Backup a ser usado (deixe vazio para listar e escolher)
-BACKUP_FILE=""
+# Backup a ser usado (deixe vazio para usar o mais recente)
+BACKUP_FILE="${BACKUP_FILE:-}"
 
-# Diretórios (carregados de config/default.conf via common.sh)
+# Modo automático (sem prompts)
+AUTO_MODE=false
+
+# Diretórios
 COOLIFY_DATA_DIR="/data/coolify"
 ENV_FILE="$COOLIFY_DATA_DIR/source/.env"
 SSH_KEYS_DIR="$COOLIFY_DATA_DIR/ssh/keys"
 BACKUP_DIR="${COOLIFY_BACKUP_DIR:-/var/backups/vpsguardian/coolify}"
 
-### ========== NÃO EDITAR ABAIXO DESTA LINHA ==========
+### ========== PARSE ARGUMENTOS ==========
+CONFIG_FILE=""
 
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --config=*)
+            CONFIG_FILE="${1#*=}"
+            shift
+            ;;
+        --config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        --auto)
+            AUTO_MODE=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --config=FILE    Load configuration from file"
+            echo "  --auto           Run in automatic mode (no prompts)"
+            echo "  -h, --help       Show this help"
+            echo ""
+            echo "Configuration file format (bash syntax):"
+            echo "  NEW_SERVER_IP=\"192.168.1.100\""
+            echo "  NEW_SERVER_USER=\"root\""
+            echo "  NEW_SERVER_PORT=\"22\""
+            echo "  SSH_PRIVATE_KEY_PATH=\"/root/.ssh/id_rsa\""
+            echo "  BACKUP_FILE=\"/var/backups/vpsguardian/coolify/backup.tar.gz\""
+            echo ""
+            echo "Environment variables can also be used to set configuration."
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Carregar arquivo de configuração se especificado
+if [ -n "$CONFIG_FILE" ]; then
+    if [ -f "$CONFIG_FILE" ]; then
+        log_info "Loading configuration from $CONFIG_FILE"
+        source "$CONFIG_FILE"
+    else
+        log_error "Configuration file not found: $CONFIG_FILE"
+        exit 1
+    fi
+fi
+
+### ========== CONSTANTES ==========
 REMOTE_BACKUP_DIR="/root/coolify-backup"
 CONTROL_SOCKET="/tmp/ssh_mux_socket_$$"
 
@@ -73,62 +128,76 @@ cleanup_and_exit() {
 
 trap 'cleanup_and_exit 1' SIGINT SIGTERM
 
-### ========== PROMPTS INTERATIVOS ==========
-
+### ========== VALIDAÇÃO E PROMPTS ==========
 log_section "VPS Guardian - Migração Coolify"
 
+# Validar/solicitar configurações obrigatórias
 if [ -z "$NEW_SERVER_IP" ]; then
+    if [ "$AUTO_MODE" = true ]; then
+        log_error "NEW_SERVER_IP is required in automatic mode"
+        exit 1
+    fi
     read -p "Enter the NEW server IP address: " NEW_SERVER_IP
 fi
-log_info "Target server: $NEW_SERVER_IP"
 
-if [ -z "$NEW_SERVER_USER" ] || [ "$NEW_SERVER_USER" = "root" ]; then
-    read -p "SSH user (default: root): " INPUT_USER
-    NEW_SERVER_USER=${INPUT_USER:-root}
+if [ -z "$NEW_SERVER_IP" ]; then
+    log_error "Server IP is required"
+    exit 1
 fi
-log_info "SSH user: $NEW_SERVER_USER"
 
-if [ -z "$NEW_SERVER_PORT" ] || [ "$NEW_SERVER_PORT" = "22" ]; then
-    read -p "SSH port (default: 22): " INPUT_PORT
-    NEW_SERVER_PORT=${INPUT_PORT:-22}
-fi
-log_info "SSH port: $NEW_SERVER_PORT"
+log_info "Target server: $NEW_SERVER_USER@$NEW_SERVER_IP:$NEW_SERVER_PORT"
 
-# Selecionar backup
+# Selecionar ou validar backup
 if [ -z "$BACKUP_FILE" ]; then
-    log_info "Available backups:"
-    echo ""
-
-    if ls "$BACKUP_DIR"/*.tar.gz 1> /dev/null 2>&1; then
-        BACKUPS=($(ls -t "$BACKUP_DIR"/*.tar.gz))
-        for i in "${!BACKUPS[@]}"; do
-            BACKUP_DATE=$(stat -c %y "${BACKUPS[$i]}" | cut -d'.' -f1)
-            BACKUP_SIZE=$(du -h "${BACKUPS[$i]}" | cut -f1)
-            echo "  [$i] $(basename ${BACKUPS[$i]}) - $BACKUP_DATE ($BACKUP_SIZE)"
-        done
-        echo ""
-        read -p "Select backup number (0-$((${#BACKUPS[@]}-1))): " BACKUP_INDEX
-        BACKUP_FILE="${BACKUPS[$BACKUP_INDEX]}"
+    # Usar backup mais recente se em modo automático
+    if [ "$AUTO_MODE" = true ]; then
+        BACKUP_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
+        if [ -z "$BACKUP_FILE" ]; then
+            log_error "No backups found in $BACKUP_DIR"
+            exit 1
+        fi
+        log_info "Using most recent backup: $(basename $BACKUP_FILE)"
     else
-        log_error "No backups found in $BACKUP_DIR"
-        log_info "Please run backup-coolify.sh first to create a backup"
-        exit 1
+        # Modo interativo - listar backups
+        log_info "Available backups:"
+        echo ""
+
+        if ls "$BACKUP_DIR"/*.tar.gz 1> /dev/null 2>&1; then
+            BACKUPS=($(ls -t "$BACKUP_DIR"/*.tar.gz))
+            for i in "${!BACKUPS[@]}"; do
+                BACKUP_DATE=$(stat -c %y "${BACKUPS[$i]}" | cut -d'.' -f1)
+                BACKUP_SIZE=$(du -h "${BACKUPS[$i]}" | cut -f1)
+                echo "  [$i] $(basename ${BACKUPS[$i]}) - $BACKUP_DATE ($BACKUP_SIZE)"
+            done
+            echo ""
+            read -p "Select backup number (0-$((${#BACKUPS[@]}-1)), or press Enter for most recent): " BACKUP_INDEX
+            BACKUP_INDEX=${BACKUP_INDEX:-0}
+            BACKUP_FILE="${BACKUPS[$BACKUP_INDEX]}"
+        else
+            log_error "No backups found in $BACKUP_DIR"
+            log_info "Please run backup-coolify.sh first to create a backup"
+            exit 1
+        fi
     fi
 fi
 
-check_file "$BACKUP_FILE" || exit 1
+# Validar backup existe
+if [ ! -f "$BACKUP_FILE" ]; then
+    log_error "Backup file not found: $BACKUP_FILE"
+    exit 1
+fi
 log_success "Selected backup: $(basename $BACKUP_FILE)"
 
-# Extrair backup temporariamente para obter informações
+# Extrair backup temporariamente
 TEMP_EXTRACT_DIR="/tmp/coolify-migration-$$"
 mkdir -p "$TEMP_EXTRACT_DIR"
+log_info "Extracting backup to analyze..."
 tar -xzf "$BACKUP_FILE" -C "$TEMP_EXTRACT_DIR" --strip-components=1 2>/dev/null
 
 # Obter APP_KEY do backup
 if [ -f "$TEMP_EXTRACT_DIR/.env" ]; then
     APP_KEY=$(grep "^APP_KEY=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
-else
-    # Fallback para env atual
+elif [ -f "$ENV_FILE" ]; then
     APP_KEY=$(grep "^APP_KEY=" "$ENV_FILE" | cut -d '=' -f2-)
 fi
 
@@ -142,34 +211,44 @@ log_success "APP_KEY retrieved from backup."
 # Detectar versão do Coolify
 COOLIFY_IMAGE=$(docker ps --filter "name=coolify" --format '{{.Image}}' | grep coollabsio/coolify | head -n1)
 COOLIFY_VERSION="${COOLIFY_IMAGE##*:}"
+if [ -z "$COOLIFY_VERSION" ] || [ "$COOLIFY_VERSION" = "coollabsio/coolify" ]; then
+    COOLIFY_VERSION="latest"
+fi
 log_success "Detected Coolify version: $COOLIFY_VERSION"
 
-# Confirmar migração
-echo ""
-log_section "MIGRATION SUMMARY"
-echo "  Source backup: $(basename $BACKUP_FILE)"
-echo "  Target server: $NEW_SERVER_USER@$NEW_SERVER_IP:$NEW_SERVER_PORT"
-echo "  Coolify version: $COOLIFY_VERSION"
-echo "  Logs directory: $MIGRATION_LOG_DIR"
-echo ""
-read -p "Proceed with migration? (yes/no): " CONFIRM
+# Confirmar migração (skip em modo auto)
+if [ "$AUTO_MODE" = false ]; then
+    echo ""
+    log_section "MIGRATION SUMMARY"
+    echo "  Source backup: $(basename $BACKUP_FILE)"
+    echo "  Target server: $NEW_SERVER_USER@$NEW_SERVER_IP:$NEW_SERVER_PORT"
+    echo "  Coolify version: $COOLIFY_VERSION"
+    echo "  Logs directory: $MIGRATION_LOG_DIR"
+    echo ""
+    read -p "Proceed with migration? Type 'YES' to confirm: " CONFIRM
 
-if [ "$CONFIRM" != "yes" ]; then
-    log_info "Migration cancelled by user."
-    rm -rf "$TEMP_EXTRACT_DIR"
-    exit 0
+    if [ "$CONFIRM" != "YES" ]; then
+        log_info "Migration cancelled by user."
+        rm -rf "$TEMP_EXTRACT_DIR"
+        exit 0
+    fi
 fi
 
 ### ========== SSH SETUP ==========
 log_section "SSH Setup"
 
-# Verificar se chave SSH existe
+# Verificar chave SSH
 if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-    log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
-    read -p "Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
+    log_error "SSH key not found at $SSH_PRIVATE_KEY_PATH"
 
-    if ! check_file "$SSH_PRIVATE_KEY_PATH"; then
-        log_error "SSH key still not found. Aborting."
+    if [ "$AUTO_MODE" = false ]; then
+        read -p "Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
+        if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
+            log_error "SSH key still not found. Aborting."
+            rm -rf "$TEMP_EXTRACT_DIR"
+            exit 1
+        fi
+    else
         rm -rf "$TEMP_EXTRACT_DIR"
         exit 1
     fi
@@ -199,25 +278,21 @@ check_success $? "Persistent SSH connection established."
 done) &
 HEALTH_CHECK_PID=$!
 
-### ========== INSTALL COOLIFY ON NEW SERVER ==========
+### ========== INSTALL COOLIFY ==========
 log_section "Install Coolify"
 log_info "Installing Coolify on new server (version: $COOLIFY_VERSION)..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash -s $COOLIFY_VERSION" \
     >"$INSTALL_LOG" 2>&1
 
-if grep -q "Your instance is ready to use" "$INSTALL_LOG"; then
-    log_success "Coolify installed successfully on new server."
-else
-    log_warning "Install script output unexpected. Checking if Coolify is running..."
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "docker ps --filter name=coolify"
-fi
+grep -q "Your instance is ready to use" "$INSTALL_LOG"
+check_success $? "Coolify install script completed."
 
-### ========== EXTRACT AND PREPARE BACKUP ==========
-log_section "Prepare Backup Files"
+### ========== PREPARE AND TRANSFER FILES ==========
+log_section "Transfer Files"
 
-# Localizar dump do PostgreSQL no backup extraído
-DB_DUMP=$(find "$TEMP_EXTRACT_DIR" -name "coolify-db-*.dmp" -type f | head -1)
+# Localizar dump do PostgreSQL
+DB_DUMP=$(find "$TEMP_EXTRACT_DIR" -name "coolify-db-*.dmp" -o -name "pg-dump-*.dmp" | head -1)
 if [ -z "$DB_DUMP" ]; then
     log_error "PostgreSQL dump not found in backup"
     rm -rf "$TEMP_EXTRACT_DIR"
@@ -225,10 +300,7 @@ if [ -z "$DB_DUMP" ]; then
 fi
 log_success "Found database dump: $(basename $DB_DUMP)"
 
-### ========== TRANSFER FILES ==========
-log_section "Transfer Files"
-
-# Criar diretório remoto
+# Criar diretório remoto e limpar SSH keys antigas
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "mkdir -p $REMOTE_BACKUP_DIR && rm -rf /data/coolify/ssh/keys/*"
 check_success $? "Remote directories prepared."
@@ -244,17 +316,26 @@ if [ -d "$TEMP_EXTRACT_DIR/ssh-keys" ]; then
     log_info "Transferring SSH keys..."
     scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
         "$TEMP_EXTRACT_DIR/ssh-keys"/* "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" >/dev/null 2>&1
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "chown -R 9999:9999 /data/coolify/ssh/keys && chmod 700 /data/coolify/ssh/keys && chmod 600 /data/coolify/ssh/keys/*"
     check_success $? "SSH keys transferred."
 fi
 
 # Transferir authorized_keys
-if [ -f "$TEMP_EXTRACT_DIR/authorized_keys" ]; then
+if [ -f "$TEMP_EXTRACT_DIR/authorized_keys" ] || [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
     log_info "Appending authorized_keys to remote server..."
     ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
         "mkdir -p $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && touch $NEW_SERVER_AUTH_KEYS_FILE" 2>/dev/null
-    cat "$TEMP_EXTRACT_DIR/authorized_keys" | \
-        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "cat >> $NEW_SERVER_AUTH_KEYS_FILE"
+
+    if [ -f "$TEMP_EXTRACT_DIR/authorized_keys" ]; then
+        cat "$TEMP_EXTRACT_DIR/authorized_keys" | \
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "cat >> $NEW_SERVER_AUTH_KEYS_FILE"
+    elif [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
+        cat "$LOCAL_AUTH_KEYS_FILE" | \
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "cat >> $NEW_SERVER_AUTH_KEYS_FILE"
+    fi
     check_success $? "Authorized keys appended."
 fi
 
@@ -295,17 +376,12 @@ ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash -s $COOLIFY_VERSION" \
     >"$FINAL_INSTALL_LOG" 2>&1 &
 
-INSTALL_PID=$!
-
 log_info "Waiting for installation to complete (max 5 minutes)..."
 for i in {1..30}; do
     sleep 10
     if grep -q "Your instance is ready to use" "$FINAL_INSTALL_LOG"; then
         log_success "Coolify installation completed successfully."
         break
-    fi
-    if [ $i -eq 30 ]; then
-        log_warning "Install script timeout. Checking container status..."
     fi
 done
 
@@ -314,7 +390,9 @@ ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "docker ps --filter name=coolify --format '{{.Names}} {{.Status}}'" \
     > "$MIGRATION_LOG_DIR/docker-status.txt"
 
-if grep -q "coolify" "$MIGRATION_LOG_DIR/docker-status.txt"; then
+if grep -q "coolify" "$MIGRATION_LOG_DIR/docker-status.txt" && grep -q "healthy" "$MIGRATION_LOG_DIR/docker-status.txt"; then
+    log_success "Coolify containers are running and healthy."
+elif grep -q "coolify" "$MIGRATION_LOG_DIR/docker-status.txt"; then
     log_success "Coolify containers are running."
     cat "$MIGRATION_LOG_DIR/docker-status.txt" | while read line; do
         log_info "Container: $line"
@@ -325,7 +403,7 @@ else
     cleanup_and_exit 1
 fi
 
-### ========== CLEANUP REMOTE BACKUP ==========
+### ========== CLEANUP ==========
 log_info "Cleaning up temporary files on remote server..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "rm -rf $REMOTE_BACKUP_DIR" 2>/dev/null

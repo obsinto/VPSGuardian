@@ -1,0 +1,57 @@
+################################################################################
+# VPS Guardian - Coolify Migration Configuration
+# Arquivo: migration.conf.example
+#
+# Copie este arquivo para migration.conf e edite as configurações:
+# cp migration.conf.example migration.conf
+#
+# Uso:
+# ./migrar/migrar-coolify.sh --config=config/migration.conf --auto
+################################################################################
+
+### ========== SERVIDOR DESTINO ==========
+# IP ou hostname do novo servidor
+NEW_SERVER_IP="192.168.1.100"
+
+# Usuário SSH (geralmente root)
+NEW_SERVER_USER="root"
+
+# Porta SSH
+NEW_SERVER_PORT="22"
+
+# Caminho do arquivo authorized_keys no servidor remoto
+NEW_SERVER_AUTH_KEYS_FILE="/root/.ssh/authorized_keys"
+
+### ========== AUTENTICAÇÃO SSH ==========
+# Caminho para chave privada SSH (deve ter acesso ao servidor destino)
+SSH_PRIVATE_KEY_PATH="/root/.ssh/id_rsa"
+
+# Arquivo authorized_keys local (será copiado para o servidor remoto)
+LOCAL_AUTH_KEYS_FILE="/root/.ssh/authorized_keys"
+
+### ========== BACKUP ==========
+# Caminho completo para o arquivo de backup a ser usado
+# Deixe vazio para usar o backup mais recente automaticamente
+BACKUP_FILE=""
+
+# OU especifique um backup específico:
+# BACKUP_FILE="/var/backups/vpsguardian/coolify/20241209_153045.tar.gz"
+
+################################################################################
+# NOTAS IMPORTANTES:
+#
+# 1. A chave SSH (SSH_PRIVATE_KEY_PATH) deve:
+#    - Existir no servidor de origem
+#    - Ter acesso sem senha ao servidor destino
+#    - Ter permissões corretas (chmod 600)
+#
+# 2. O servidor destino deve:
+#    - Estar acessível via SSH
+#    - Ter Docker instalado (ou será instalado pelo script)
+#    - Ter espaço suficiente para o backup
+#
+# 3. Em modo --auto, o script NÃO pedirá confirmação
+#    Certifique-se de que todas as configurações estão corretas!
+#
+# 4. Logs serão salvos em: /var/log/vpsguardian/migration-YYYYMMDD_HHMMSS/
+################################################################################
