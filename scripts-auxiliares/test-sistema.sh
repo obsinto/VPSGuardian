@@ -13,11 +13,19 @@ ERROS=0
 
 # Teste 1: Scripts existem e são executáveis
 echo "🔍 Teste 1: Verificando scripts..."
-for script in manutencao-completa.sh backup-coolify.sh alerta-disco.sh; do
+declare -A scripts=(
+    ["manutencao/manutencao-completa.sh"]="Manutenção completa"
+    ["backup/backup-coolify.sh"]="Backup Coolify"
+    ["manutencao/alerta-disco.sh"]="Alerta de disco"
+    ["backup/backup-coolify-s3.sh"]="Backup S3"
+    ["scripts-auxiliares/limpar-backups-antigos.sh"]="Limpeza de backups"
+)
+
+for script in "${!scripts[@]}"; do
     if [ -x "/opt/vpsguardian/$script" ]; then
-        echo "  ✓ $script OK"
+        echo "  ✓ ${scripts[$script]} OK"
     else
-        echo "  ✗ $script FALTANDO ou não executável"
+        echo "  ✗ ${scripts[$script]} FALTANDO ou não executável"
         ((ERROS++))
     fi
 done
@@ -25,7 +33,7 @@ echo ""
 
 # Teste 2: Diretórios existem
 echo "🔍 Teste 2: Verificando diretórios..."
-for dir in /opt/vpsguardian /var/log/manutencao /root/coolify-backups; do
+for dir in /opt/vpsguardian /var/log/vpsguardian /var/backups/vpsguardian; do
     if [ -d "$dir" ]; then
         echo "  ✓ $dir OK"
     else
@@ -74,11 +82,11 @@ echo ""
 
 # Teste 6: Backups existem
 echo "🔍 Teste 6: Verificando backups..."
-BACKUP_COUNT=$(ls -1 /root/coolify-backups/*.tar.gz 2>/dev/null | wc -l)
+BACKUP_COUNT=$(find /var/backups/vpsguardian -name "coolify-*.tar.gz" 2>/dev/null | wc -l)
 if [ "$BACKUP_COUNT" -gt 0 ]; then
     echo "  ✓ $BACKUP_COUNT backups encontrados"
 else
-    echo "  ⚠  Nenhum backup encontrado (execute backup-coolify.sh)"
+    echo "  ⚠  Nenhum backup encontrado (execute: vps-guardian backup)"
 fi
 echo ""
 
@@ -97,15 +105,15 @@ echo ""
 
 # Teste 8: Logs recentes
 echo "🔍 Teste 8: Verificando logs..."
-if [ -f /var/log/manutencao/manutencao.log ]; then
-    LAST_MAINTENANCE=$(tail -1 /var/log/manutencao/manutencao.log | grep -o '\[.*\]' | head -1)
+if [ -f /var/log/vpsguardian/manutencao.log ]; then
+    LAST_MAINTENANCE=$(tail -1 /var/log/vpsguardian/manutencao.log | grep -o '\[.*\]' | head -1)
     echo "  ✓ Última manutenção: $LAST_MAINTENANCE"
 else
     echo "  ⚠  Nenhuma manutenção executada ainda"
 fi
 
-if [ -f /var/log/manutencao/backup-coolify.log ]; then
-    LAST_BACKUP=$(tail -1 /var/log/manutencao/backup-coolify.log | grep -o '\[.*\]' | head -1)
+if [ -f /var/log/vpsguardian/backup-coolify.log ]; then
+    LAST_BACKUP=$(tail -1 /var/log/vpsguardian/backup-coolify.log | grep -o '\[.*\]' | head -1)
     echo "  ✓ Último backup: $LAST_BACKUP"
 else
     echo "  ⚠  Nenhum backup executado ainda"
