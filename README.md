@@ -33,7 +33,11 @@ cd vpsguardian && sudo ./instalar.sh
 - `restaurar-coolify-remoto.sh` - Restauração automatizada
 
 ### Migração
-- `migrar-coolify.sh` - Migração completa entre servidores
+- `migrar-completo.sh` - **Migração COMPLETA** (Coolify + Apps + Volumes)
+- `migrar-coolify.sh` - Migração apenas Coolify (DB + config)
+- `backup-volumes.sh` - Backup volumes Docker (aplicações)
+- `transfer-volumes.sh` - Transferir volumes entre servidores
+- `restore-volumes.sh` - Restaurar volumes de backup
 - `validar-pre-migracao.sh` - 30+ verificações pré-migração
 - `validar-pos-migracao.sh` - 40+ verificações pós-migração
 
@@ -67,7 +71,8 @@ status-vps                # = vps-guardian status
 - **[USO-SCRIPTS.md](docs/USO-SCRIPTS.md)** - Documentação completa dos scripts
 - **[BACKUP-S3-GUIDE.md](docs/BACKUP-S3-GUIDE.md)** - Backup para S3
 - **[RETENCAO-BACKUPS.md](docs/RETENCAO-BACKUPS.md)** - Gestão de retenção
-- **[GUIA-MIGRACAO-COMPLETA.md](docs/GUIA-MIGRACAO-COMPLETA.md)** - Migração entre servidores
+- **[MIGRACAO-APPS.md](docs/MIGRACAO-APPS.md)** - Migração COMPLETA (Coolify + Apps)
+- **[GUIA-MIGRACAO-COMPLETA.md](docs/GUIA-MIGRACAO-COMPLETA.md)** - Migração apenas Coolify
 - **[FIREWALL-GUIDE.md](docs/FIREWALL-GUIDE.md)** - Configuração de firewall
 - **[COMANDOS.md](docs/COMANDOS.md)** - Referência de comandos
 
@@ -105,12 +110,13 @@ sudo vps-guardian cron
 # Frequência: diária às 02:00
 ```
 
-### Migrar para Novo Servidor
+### Migrar Coolify + Apps para Novo Servidor
 ```bash
-# No servidor antigo:
-sudo vps-guardian backup
+# Migração TOTAL (Coolify + todas as aplicações):
+sudo /opt/vpsguardian/migrar/migrar-completo.sh --auto
+
+# OU apenas Coolify (sem volumes de apps):
 sudo vps-guardian migrate
-# Seguir assistente interativo
 ```
 
 ### Configurar Firewall Seguro
