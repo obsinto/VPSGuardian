@@ -104,16 +104,22 @@ manutencao_backup_vps/
 
 ## 🚀 Quick Start
 
-### 1️⃣ Clonar o Repositório
+### 1️⃣ Instalação Rápida
 ```bash
+cd /opt
 git clone <seu-repositorio> manutencao_backup_vps
 cd manutencao_backup_vps
-chmod +x menu-principal.sh backup/*.sh manutencao/*.sh migrar/*.sh scripts-auxiliares/*.sh
+./instalador.sh
 ```
 
-### 2️⃣ Executar o Menu Principal
+### 2️⃣ Executar o Sistema
 ```bash
-sudo bash menu-principal.sh
+# Comando global (disponível de qualquer lugar)
+vps-guardian
+
+# OU manualmente
+cd /opt/manutencao_backup_vps
+./menu-principal.sh
 ```
 
 ### 3️⃣ Navegue pelo Menu
@@ -156,9 +162,15 @@ Digite a opção desejada:
 - **Verificar saúde** do sistema
 
 ### 4️⃣ Migração ⚠️
-- Migrar Coolify completo
-- Migrar bancos de dados
-- Verificar integridade pós-migração
+- Migrar Coolify completo para nova VPS
+- Migrar volumes Docker individuais
+- Transferir backups entre servidores
+- **Validação pré-migração** (checagem de requisitos)
+- **Validação pós-migração** (verificação de sucesso)
+- **Checklist interativo** (guia passo a passo)
+
+📖 **[Guia Completo de Teste de Migração](docs/TESTE-MIGRACAO.md)**
+⚡ **[Guia Rápido de Migração](docs/GUIA-RAPIDO-MIGRACAO.md)**
 
 ### 5️⃣ Configuração
 - **Configurar firewall** (detecta Coolify, pede rede LAN)
@@ -215,6 +227,100 @@ sudo bash menu-principal.sh
 # Escolher: Manutenção semanal aos domingos 3h
 # Etc.
 ```
+
+---
+
+## 🧪 Teste de Migração com 100% de Confiança
+
+### Passo 1: Validar Ambiente Antes da Migração
+
+```bash
+# Na VPS PRINCIPAL
+vps-guardian
+# → Scripts Auxiliares → Validar Pré-Migração
+
+# OU diretamente:
+./scripts-auxiliares/validar-pre-migracao.sh
+```
+
+**Verifica:**
+- ✅ Sistema operacional e dependências
+- ✅ Docker e containers do Coolify
+- ✅ Banco de dados PostgreSQL
+- ✅ Backups existentes e válidos
+- ✅ SSH configurado
+- ✅ Espaço em disco
+
+### Passo 2: Executar Migração Completa
+
+```bash
+# Na VPS PRINCIPAL
+./migrar/migrar-coolify.sh
+
+# Informações solicitadas:
+# - IP da VPS de destino
+# - Usuário SSH (padrão: root)
+# - Porta SSH (padrão: 22)
+# - Selecionar backup para migrar
+```
+
+**O script faz automaticamente:**
+1. Conecta via SSH na VPS destino
+2. Instala Coolify
+3. Transfere backup
+4. Restaura banco de dados
+5. Copia SSH keys e configurações
+6. Atualiza variáveis de ambiente
+7. Inicia todos os containers
+
+### Passo 3: Validar Migração Completa
+
+```bash
+# Na VPS PRINCIPAL (validação remota)
+./scripts-auxiliares/validar-pos-migracao.sh --remote [IP_VPS_DESTINO]
+
+# OU na VPS DESTINO (validação local)
+./scripts-auxiliares/validar-pos-migracao.sh
+```
+
+**Verifica:**
+- ✅ Coolify instalado e rodando
+- ✅ Todos os containers ativos
+- ✅ Banco de dados restaurado
+- ✅ Interface web acessível
+- ✅ Configurações preservadas
+- ✅ Logs sem erros críticos
+
+### Checklist Interativo (Recomendado)
+
+```bash
+./scripts-auxiliares/checklist-migracao.sh
+```
+
+Interface interativa que guia você por cada etapa:
+- Marca progresso automaticamente
+- Sugere comandos para executar
+- Valida cada passo
+- Gera relatório final
+
+**Modos disponíveis:**
+1. **Migração completa** - Processo end-to-end
+2. **Apenas pré-validação** - Checar se sistema está pronto
+3. **Apenas pós-validação** - Verificar sucesso da migração
+
+### Documentação Completa de Testes
+
+📚 **[Guia Detalhado de Teste de Migração](docs/TESTE-MIGRACAO.md)**
+- Infraestrutura de teste
+- 8 fases de validação
+- Troubleshooting completo
+- Checklist final de 25+ itens
+
+⚡ **[Guia Rápido (5 Passos)](docs/GUIA-RAPIDO-MIGRACAO.md)**
+- Quick start em 5 minutos
+- Comandos essenciais
+- Troubleshooting rápido
+- Critérios de sucesso
 
 ---
 
