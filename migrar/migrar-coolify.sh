@@ -626,45 +626,120 @@ check_success $? "Database dump transferred."
 # ==============================================================================
 # DETECÇÃO DE CHAVES SSH (salvar para usar após Final Install)
 # ==============================================================================
-log_info "Localizando chaves SSH para transferência posterior..."
+log_section "Detecting SSH Keys"
+log_info "🔍 Localizando chaves SSH para transferência posterior..."
+echo ""
+
+# DEBUG: Informações do ambiente
+log_info "DEBUG: Hostname atual: $(hostname)"
+log_info "DEBUG: Diretório de trabalho: $(pwd)"
+log_info "DEBUG: TEMP_EXTRACT_DIR: $TEMP_EXTRACT_DIR"
+echo ""
 
 SOURCE_KEYS=""
+KEYS_COUNT=0
 
 # 1. PRIORIDADE MÁXIMA: Sistema Local (/data/coolify/ssh/keys)
+log_info "🔍 Verificando sistema local: /data/coolify/ssh/keys"
 if [ -d "/data/coolify/ssh/keys" ]; then
-    SOURCE_KEYS="/data/coolify/ssh/keys"
-    KEYS_COUNT=$(find "$SOURCE_KEYS" -type f 2>/dev/null | wc -l)
-    log_info "✅ Chaves encontradas no sistema local: $SOURCE_KEYS ($KEYS_COUNT arquivos)"
+    KEYS_COUNT=$(find "/data/coolify/ssh/keys" -type f 2>/dev/null | wc -l)
+
+    log_info "✅ Diretório existe!"
+    log_info "   Arquivos encontrados: $KEYS_COUNT"
+
+    if [ $KEYS_COUNT -gt 0 ]; then
+        SOURCE_KEYS="/data/coolify/ssh/keys"
+        log_success "✅ Chaves encontradas no sistema local: $SOURCE_KEYS ($KEYS_COUNT arquivos)"
+
+        # DEBUG: Listar os arquivos encontrados
+        echo ""
+        log_info "DEBUG: Listagem dos arquivos:"
+        find "$SOURCE_KEYS" -type f 2>/dev/null | while read key_file; do
+            log_info "  - $(basename $key_file) ($(stat -c%s "$key_file") bytes)"
+        done
+        echo ""
+    else
+        log_warning "⚠️  Diretório existe mas está VAZIO!"
+    fi
 else
-    # 2. Fallback: Procura no Backup extraído
-    log_warning "Diretório local /data/coolify/ssh/keys não encontrado."
-    log_info "Procurando chaves no backup extraído..."
+    log_warning "❌ Diretório /data/coolify/ssh/keys não encontrado no sistema local"
+fi
+
+# 2. Fallback: Procura no Backup extraído
+if [ -z "$SOURCE_KEYS" ] || [ $KEYS_COUNT -eq 0 ]; then
+    log_info "🔍 Procurando chaves no backup extraído: $TEMP_EXTRACT_DIR"
+    echo ""
+
+    # DEBUG: Listar estrutura do backup
+    log_info "DEBUG: Estrutura do backup extraído:"
+    find "$TEMP_EXTRACT_DIR" -maxdepth 3 -type d 2>/dev/null | head -20 | while read dir; do
+        log_info "  DIR: ${dir#$TEMP_EXTRACT_DIR/}"
+    done
+    echo ""
 
     FOUND_IN_BACKUP=$(find "$TEMP_EXTRACT_DIR" -type d \( -name "ssh-keys" -o -path "*/ssh/keys" \) 2>/dev/null | head -n 1)
 
     if [ -n "$FOUND_IN_BACKUP" ]; then
-        SOURCE_KEYS="$FOUND_IN_BACKUP"
-        KEYS_COUNT=$(find "$SOURCE_KEYS" -type f 2>/dev/null | wc -l)
-        log_info "✅ Chaves encontradas no backup: $SOURCE_KEYS ($KEYS_COUNT arquivos)"
+        KEYS_COUNT=$(find "$FOUND_IN_BACKUP" -type f 2>/dev/null | wc -l)
+        log_info "✅ Diretório de chaves encontrado no backup: $FOUND_IN_BACKUP"
+        log_info "   Arquivos encontrados: $KEYS_COUNT"
+
+        if [ $KEYS_COUNT -gt 0 ]; then
+            SOURCE_KEYS="$FOUND_IN_BACKUP"
+            log_success "✅ Chaves encontradas no backup: $SOURCE_KEYS ($KEYS_COUNT arquivos)"
+
+            # DEBUG: Listar os arquivos do backup
+            echo ""
+            log_info "DEBUG: Listagem dos arquivos no backup:"
+            find "$SOURCE_KEYS" -type f 2>/dev/null | while read key_file; do
+                log_info "  - $(basename $key_file) ($(stat -c%s "$key_file") bytes)"
+            done
+            echo ""
+        else
+            log_warning "⚠️  Diretório encontrado no backup mas está VAZIO!"
+        fi
+    else
+        log_warning "❌ Nenhum diretório de chaves SSH encontrado no backup"
     fi
 fi
 
-if [ -z "$SOURCE_KEYS" ]; then
+echo ""
+# Resultado final
+if [ -z "$SOURCE_KEYS" ] || [ $KEYS_COUNT -eq 0 ]; then
     log_error "❌ NENHUMA CHAVE SSH ENCONTRADA!"
     log_error "Verificado em:"
     log_error "  1. Sistema local: /data/coolify/ssh/keys"
     log_error "  2. Backup extraído: $TEMP_EXTRACT_DIR"
-    log_warning "⚠️  As chaves SSH serão necessárias após o Final Install"
+    echo ""
+    log_warning "⚠️  IMPORTANTE: Você está executando o script no SERVIDOR DE ORIGEM?"
+    log_warning "O servidor de origem deve ter chaves em: /data/coolify/ssh/keys"
+    log_warning "As chaves SSH serão necessárias após o Final Install"
+    echo ""
 else
+    log_success "✅ Total de chaves encontradas: $KEYS_COUNT arquivos"
+    log_success "✅ Fonte: $SOURCE_KEYS"
+
     # Se as chaves estão no backup, copiar para temp local antes de limpar
     if [[ "$SOURCE_KEYS" == "$TEMP_EXTRACT_DIR"* ]]; then
         TEMP_KEYS_BACKUP="/tmp/coolify-ssh-keys-$$"
+        log_info "📦 Criando backup temporário das chaves..."
         mkdir -p "$TEMP_KEYS_BACKUP"
-        cp -r "$SOURCE_KEYS"/. "$TEMP_KEYS_BACKUP/" 2>/dev/null
-        SOURCE_KEYS="$TEMP_KEYS_BACKUP"
-        log_info "📦 Chaves copiadas para backup temporário: $SOURCE_KEYS"
+
+        cp -rv "$SOURCE_KEYS"/. "$TEMP_KEYS_BACKUP/" 2>&1 | grep -v "^$"
+
+        if [ $? -eq 0 ]; then
+            SOURCE_KEYS="$TEMP_KEYS_BACKUP"
+            log_success "📦 Chaves copiadas para backup temporário: $SOURCE_KEYS"
+
+            # Verificar se a cópia funcionou
+            TEMP_KEYS_COUNT=$(find "$TEMP_KEYS_BACKUP" -type f 2>/dev/null | wc -l)
+            log_info "   Arquivos no backup temporário: $TEMP_KEYS_COUNT"
+        else
+            log_error "❌ Falha ao criar backup temporário das chaves!"
+        fi
     fi
 fi
+echo ""
 # ==============================================================================
 # FIM DA DETECÇÃO DE CHAVES SSH
 # ==============================================================================
@@ -788,26 +863,66 @@ done
 ### ========== TRANSFER SSH KEYS (AFTER FINAL INSTALL) ==========
 log_section "Transfer SSH Keys"
 
+log_info "DEBUG: Verificando variáveis de estado..."
+log_info "  SOURCE_KEYS: ${SOURCE_KEYS:-<vazio>}"
+log_info "  KEYS_COUNT: ${KEYS_COUNT:-0}"
+
 if [ -n "$SOURCE_KEYS" ] && [ -d "$SOURCE_KEYS" ]; then
-    log_info "Transferindo chaves SSH de: $SOURCE_KEYS"
-    log_info "Total de chaves: $KEYS_COUNT arquivos"
+    log_success "✅ Chaves SSH disponíveis para transferência!"
+    log_info "   Origem: $SOURCE_KEYS"
+    log_info "   Total: $KEYS_COUNT arquivos"
+    echo ""
+
+    # DEBUG: Listar novamente antes de transferir
+    log_info "DEBUG: Arquivos que serão transferidos:"
+    find "$SOURCE_KEYS" -type f 2>/dev/null | while read key_file; do
+        log_info "  - $(basename $key_file)"
+    done
+    echo ""
 
     # Criar diretório remoto (garantir que existe)
+    log_info "Criando diretório remoto: /data/coolify/ssh/keys"
     ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
         "mkdir -p /data/coolify/ssh/keys" 2>/dev/null
+    check_success $? "Diretório criado no servidor remoto"
 
     # Transferir chaves (usando /. para incluir arquivos ocultos)
-    log_info "Iniciando transferência..."
-    scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
-        "$SOURCE_KEYS"/. "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" >/dev/null 2>&1
+    log_info "Iniciando transferência via SCP..."
+    echo ""
 
-    if [ $? -eq 0 ]; then
-        log_success "✅ Chaves SSH transferidas com sucesso!"
+    # Transferir com verbose para debug
+    scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
+        "$SOURCE_KEYS"/. "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" 2>&1
+
+    SCP_EXIT_CODE=$?
+    echo ""
+
+    if [ $SCP_EXIT_CODE -eq 0 ]; then
+        log_success "✅ Comando SCP executado com sucesso!"
 
         # Verificar quantos arquivos foram transferidos
+        log_info "Verificando arquivos no servidor remoto..."
         TRANSFERRED_COUNT=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
             "find /data/coolify/ssh/keys -type f 2>/dev/null | wc -l")
-        log_info "Arquivos transferidos no servidor remoto: $TRANSFERRED_COUNT"
+
+        if [ "$TRANSFERRED_COUNT" -gt 0 ]; then
+            log_success "✅ Chaves SSH transferidas com sucesso!"
+            log_success "   Arquivos no servidor remoto: $TRANSFERRED_COUNT"
+
+            # Listar arquivos transferidos
+            echo ""
+            log_info "Arquivos no servidor remoto:"
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+                "ls -lh /data/coolify/ssh/keys" 2>/dev/null | tail -n +2 | while read line; do
+                log_info "  $line"
+            done
+            echo ""
+        else
+            log_error "❌ SCP executou mas NENHUM arquivo foi transferido!"
+            log_warning "Verificando diretório remoto:"
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+                "ls -la /data/coolify/ssh/keys" 2>/dev/null
+        fi
 
         # Limpar backup temporário se foi criado
         if [[ "$SOURCE_KEYS" == "/tmp/coolify-ssh-keys-"* ]]; then
@@ -815,16 +930,23 @@ if [ -n "$SOURCE_KEYS" ] && [ -d "$SOURCE_KEYS" ]; then
             log_info "Backup temporário removido: $SOURCE_KEYS"
         fi
     else
-        log_error "❌ Falha ao transferir chaves SSH"
+        log_error "❌ Falha ao transferir chaves SSH (Exit code: $SCP_EXIT_CODE)"
         log_warning "As aplicações podem não conseguir se conectar via SSH aos servidores"
     fi
 else
     log_warning "❌ Nenhuma chave SSH disponível para transferência"
-    log_warning "SOURCE_KEYS: ${SOURCE_KEYS:-<vazio>}"
+    echo ""
+    log_warning "Estado das variáveis:"
+    log_warning "  SOURCE_KEYS: ${SOURCE_KEYS:-<vazio>}"
+    log_warning "  KEYS_COUNT: ${KEYS_COUNT:-0}"
+    log_warning "  Diretório existe? $([ -d "$SOURCE_KEYS" ] && echo 'SIM' || echo 'NÃO')"
+    echo ""
     log_warning "⚠️  IMPORTANTE: Sem chaves SSH, o Coolify não conseguirá se conectar aos servidores"
     log_warning "Você precisará:"
-    log_warning "  1. Regenerar as chaves no Coolify (Settings > SSH Keys)"
-    log_warning "  2. Ou copiar manualmente de: /data/coolify/ssh/keys (servidor antigo)"
+    log_warning "  1. Verificar se está executando no SERVIDOR DE ORIGEM correto"
+    log_warning "  2. Copiar manualmente: scp -r /data/coolify/ssh/keys/* root@$NEW_SERVER_IP:/data/coolify/ssh/keys/"
+    log_warning "  3. Ou regenerar as chaves no Coolify (Settings > SSH Keys)"
+    echo ""
 fi
 
 # Re-configurar permissões das SSH keys após o install (CRÍTICO)
