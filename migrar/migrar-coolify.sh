@@ -484,6 +484,109 @@ check_success $? "Persistent SSH connection established."
 done) &
 HEALTH_CHECK_PID=$!
 
+### ========== CHECK AND REMOVE EXISTING COOLIFY ==========
+log_section "Check Existing Installation"
+
+# Verificar se há Coolify instalado no servidor de destino
+log_info "Checking for existing Coolify installation on destination server..."
+EXISTING_COOLIFY=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+    "docker ps -a --filter 'name=coolify' --format '{{.Names}}' 2>/dev/null" | wc -l)
+
+if [ "$EXISTING_COOLIFY" -gt 0 ]; then
+    log_warning "Coolify installation detected on destination server!"
+    echo ""
+
+    # Listar containers encontrados
+    echo "Containers encontrados:"
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "docker ps -a --filter 'name=coolify' --format '  - {{.Names}} ({{.Status}})'"
+    echo ""
+
+    REMOVE_EXISTING="n"
+    if [ "$AUTO_MODE" = false ]; then
+        echo "⚠️  IMPORTANTE: Para uma migração limpa, é recomendado remover a instalação anterior."
+        echo ""
+        echo "Isso irá:"
+        echo "  • Parar todos containers do Coolify"
+        echo "  • Remover containers e imagens"
+        echo "  • Limpar volumes Docker (OPCIONAL)"
+        echo "  • Remover diretório /data/coolify"
+        echo ""
+        read -p "Deseja remover a instalação anterior? (S/n): " REMOVE_EXISTING
+        REMOVE_EXISTING=${REMOVE_EXISTING:-S}
+    else
+        # Em modo automático, sempre remove (instalação limpa)
+        REMOVE_EXISTING="S"
+        log_warning "Modo automático: removendo instalação anterior automaticamente"
+    fi
+
+    if [[ "$REMOVE_EXISTING" =~ ^[Ss]$ ]]; then
+        log_info "Removendo instalação anterior do Coolify..."
+
+        # 1. Parar todos containers do Coolify
+        log_info "Parando containers do Coolify..."
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "docker stop \$(docker ps -a --filter 'name=coolify' --format '{{.Names}}') 2>/dev/null || true"
+
+        # 2. Remover containers
+        log_info "Removendo containers..."
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "docker rm -f \$(docker ps -a --filter 'name=coolify' --format '{{.Names}}') 2>/dev/null || true"
+
+        # 3. Perguntar sobre volumes (dados das aplicações)
+        REMOVE_VOLUMES="n"
+        if [ "$AUTO_MODE" = false ]; then
+            echo ""
+            log_warning "Volumes Docker contêm dados das aplicações (bancos de dados, arquivos, etc)."
+            read -p "Deseja também remover os volumes? (s/N): " REMOVE_VOLUMES
+            REMOVE_VOLUMES=${REMOVE_VOLUMES:-n}
+        fi
+
+        if [[ "$REMOVE_VOLUMES" =~ ^[Ss]$ ]]; then
+            log_info "Removendo volumes do Coolify..."
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+                "docker volume rm \$(docker volume ls --filter 'name=coolify' --format '{{.Name}}') 2>/dev/null || true"
+            log_success "Volumes removidos"
+        else
+            log_info "Volumes preservados (serão sobrescritos se necessário)"
+        fi
+
+        # 4. Remover imagens do Coolify (opcional, economiza espaço)
+        log_info "Removendo imagens do Coolify..."
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "docker rmi \$(docker images 'coollabsio/coolify*' -q) 2>/dev/null || true"
+
+        # 5. Remover diretório /data/coolify
+        log_info "Removendo diretório /data/coolify..."
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "rm -rf /data/coolify"
+
+        # 6. Limpar networks órfãs
+        log_info "Limpando Docker networks órfãs..."
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "docker network prune -f 2>/dev/null || true"
+
+        log_success "Instalação anterior removida completamente!"
+        log_info "Servidor pronto para instalação limpa do Coolify"
+    else
+        log_warning "Instalação anterior NÃO removida"
+        log_warning "A migração pode ter conflitos com a instalação existente"
+        echo ""
+        read -p "Deseja continuar mesmo assim? (s/N): " CONTINUE_ANYWAY
+        CONTINUE_ANYWAY=${CONTINUE_ANYWAY:-n}
+
+        if [[ ! "$CONTINUE_ANYWAY" =~ ^[Ss]$ ]]; then
+            log_info "Migração cancelada pelo usuário"
+            rm -rf "$TEMP_EXTRACT_DIR"
+            cleanup_and_exit 0
+        fi
+    fi
+else
+    log_success "Nenhuma instalação anterior detectada. Servidor limpo!"
+fi
+
+echo ""
+
 ### ========== INSTALL COOLIFY ==========
 log_section "Install Coolify"
 log_info "Installing Coolify on new server (version: $COOLIFY_VERSION)..."
