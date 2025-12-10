@@ -19,23 +19,35 @@ Guia rápido e direto para instalar o VPS Guardian no seu servidor.
 ### 1. Clonar o Repositório
 
 ```bash
-cd /opt
-git clone https://github.com/SEU-USUARIO/manutencao_backup_vps.git vpsguardian
+# Clone no local padrão Unix para código fonte
+cd /usr/local/src
+sudo git clone https://github.com/SEU-USUARIO/vpsguardian.git
 cd vpsguardian
 ```
+
+> **📁 Por que `/usr/local/src`?**
+>
+> É o local padrão do Filesystem Hierarchy Standard (FHS) para código fonte de software instalado localmente:
+> - ✅ **Padrão Unix/Linux** reconhecido há 40+ anos
+> - ✅ **Independente de usuário** - não fica acoplado ao `/root`
+> - ✅ **Profissional** - esperado por outros sysadmins
+> - ✅ **Separação clara** - código fonte separado da instalação
+> - ✅ **Facilita updates** - `git pull` + reinstalar
 
 ### 2. Executar Instalador
 
 ```bash
-sudo chmod +x instalar.sh
 sudo ./instalar.sh
 ```
 
+**Escolha "Symlinks" (opção 1)** quando perguntado - isso permite atualizações fáceis!
+
 O instalador irá:
 - ✅ Criar diretórios necessários (`/opt/vpsguardian`, `/var/backups/vpsguardian`, `/var/log/vpsguardian`)
+- ✅ Criar **symlinks** de `/opt/vpsguardian` → `/usr/local/src/vpsguardian`
 - ✅ Configurar permissões corretas
 - ✅ Instalar comando global `vps-guardian`
-- ✅ Configurar cron jobs (opcional)
+- ✅ Configurar aliases úteis (`backup-vps`, `firewall-vps`, etc.)
 - ✅ Validar dependências (docker, tar, gzip, etc.)
 
 ### 3. Verificar Instalação
@@ -92,26 +104,51 @@ sudo crontab -e
 ## 📦 Estrutura de Diretórios Após Instalação
 
 ```
-/opt/vpsguardian/
+📂 CÓDIGO FONTE (Git Repository)
+/usr/local/src/vpsguardian/
 ├── backup/              # Scripts de backup
 ├── manutencao/          # Scripts de manutenção
 ├── migrar/              # Scripts de migração
 ├── scripts-auxiliares/  # Utilitários
-├── lib/                 # Bibliotecas compartilhadas
+├── lib/                 # Bibliotecas compartilhadas (common.sh, logging.sh, etc.)
 ├── config/              # Configurações
+├── docs/                # Documentação
+├── instalar.sh          # Instalador
 └── menu-principal.sh    # Menu interativo
 
-/var/backups/vpsguardian/
-├── coolify/             # Backups do Coolify
-├── databases/           # Dumps de bancos de dados
-└── volumes/             # Backups de volumes Docker
+📂 INSTALAÇÃO (Symlinks → código fonte)
+/opt/vpsguardian/
+├── backup/ → /usr/local/src/vpsguardian/backup/
+├── manutencao/ → /usr/local/src/vpsguardian/manutencao/
+├── migrar/ → /usr/local/src/vpsguardian/migrar/
+├── lib/ → /usr/local/src/vpsguardian/lib/
+└── ... (todos são symlinks)
 
+📂 BACKUPS
+/var/backups/vpsguardian/
+├── coolify/             # Backups do Coolify (tar.gz)
+├── databases/           # Dumps de bancos de dados (sql.gz)
+└── volumes/             # Backups de volumes Docker (tar.gz)
+
+📂 LOGS
 /var/log/vpsguardian/
 └── *.log                # Logs de todas as operações
 
+📂 COMANDOS GLOBAIS
 /usr/local/bin/
-└── vps-guardian         # Comando global
+├── vps-guardian         # Comando principal
+├── backup-vps           # Alias para vps-guardian backup
+├── firewall-vps         # Alias para vps-guardian firewall
+└── status-vps           # Alias para vps-guardian status
 ```
+
+### 🔗 Vantagens dos Symlinks
+
+Ao usar symlinks (opção 1 no instalador):
+- ✅ **Atualizações fáceis:** `cd /usr/local/src/vpsguardian && git pull`
+- ✅ **Sem reinstalação:** Mudanças refletem imediatamente
+- ✅ **Backup simples:** Apenas o código fonte precisa estar no Git
+- ✅ **Rastreável:** Git controla todas as mudanças
 
 ---
 
@@ -157,10 +194,18 @@ ls -lh /var/backups/vpsguardian/coolify/
 Para atualizar o VPS Guardian:
 
 ```bash
-cd /opt/vpsguardian
+# Atualizar código fonte
+cd /usr/local/src/vpsguardian
 git pull origin main
-sudo ./instalar.sh  # Re-executar instalador
+
+# Se usou SYMLINKS (recomendado): pronto! ✅
+# Se usou CÓPIAS: reinstalar
+sudo ./instalar.sh
+# Escolha opção "1. Atualizar"
 ```
+
+**Com symlinks:** As mudanças refletem automaticamente! 🎉
+**Com cópias:** Precisa reinstalar para copiar os novos arquivos.
 
 ---
 

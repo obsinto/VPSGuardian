@@ -9,11 +9,18 @@
 ## 🚀 Quick Start
 
 ```bash
-cd /opt && git clone <seu-repo> vpsguardian
-cd vpsguardian && sudo ./instalar.sh
+# Clone no local correto (padrão Unix)
+cd /usr/local/src
+sudo git clone https://github.com/SEU-USUARIO/vpsguardian.git
+cd vpsguardian
+
+# Instale (cria instalação em /opt/vpsguardian)
+sudo ./instalar.sh
 ```
 
 **Comando global instalado:** `vps-guardian`
+
+> **📁 Por que `/usr/local/src`?** É o local padrão Unix para código fonte de ferramentas locais. O instalador cria symlinks em `/opt/vpsguardian` automaticamente.
 
 ## ✨ Principais Recursos
 
@@ -79,19 +86,24 @@ status-vps                # = vps-guardian status
 ## 🏗️ Arquitetura
 
 ```
-/opt/vpsguardian/
+📂 CÓDIGO FONTE (Git)
+/usr/local/src/vpsguardian/
 ├── backup/              # Scripts de backup/restauração
 ├── migrar/              # Scripts de migração
 ├── manutencao/          # Scripts de manutenção
 ├── scripts-auxiliares/  # Utilitários e validadores
 ├── lib/                 # Bibliotecas compartilhadas
-│   ├── common.sh        # → Loader principal
-│   ├── logging.sh       # → Logging padronizado
-│   ├── colors.sh        # → Cores ANSI
+│   ├── common.sh        # → Loader principal + utils
+│   ├── logging.sh       # → Sistema de logs padronizado
+│   ├── colors.sh        # → Cores ANSI para output
 │   └── validation.sh    # → 50+ funções de validação
-├── config/              # Configurações
-└── menu-principal.sh    # Menu interativo
+├── config/              # Configurações e exemplos
+└── menu-principal.sh    # Menu interativo principal
 
+📂 INSTALAÇÃO (Symlinks)
+/opt/vpsguardian/ → /usr/local/src/vpsguardian/
+
+📂 DADOS
 /var/backups/vpsguardian/
 ├── coolify/             # Backups Coolify (tar.gz)
 ├── databases/           # Dumps SQL (sql.gz)
