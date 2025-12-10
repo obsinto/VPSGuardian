@@ -111,6 +111,49 @@ check_success() {
     fi
 }
 
+check_and_install_dependencies() {
+    local missing_deps=()
+
+    # Verificar sshpass (útil mas não obrigatório, expect é fallback)
+    if ! command -v sshpass >/dev/null 2>&1; then
+        missing_deps+=("sshpass")
+    fi
+
+    # Verificar expect (fallback se não tiver sshpass)
+    if ! command -v expect >/dev/null 2>&1; then
+        missing_deps+=("expect")
+    fi
+
+    # Se ambos estão faltando, oferecer instalar
+    if [ ${#missing_deps[@]} -eq 2 ]; then
+        log_warning "Ferramentas de automação SSH não encontradas (sshpass ou expect)"
+
+        if [ "$AUTO_MODE" = false ]; then
+            echo ""
+            echo "Para configurar SSH automaticamente, precisamos de uma das ferramentas:"
+            echo "  - sshpass (recomendado, mais simples)"
+            echo "  - expect (alternativa)"
+            echo ""
+            read -p "Deseja instalar sshpass agora? (S/n): " INSTALL_DEPS
+            INSTALL_DEPS=${INSTALL_DEPS:-S}
+
+            if [[ "$INSTALL_DEPS" =~ ^[Ss]$ ]]; then
+                log_info "Instalando sshpass..."
+                apt-get update -qq >/dev/null 2>&1
+                apt-get install -y sshpass >/dev/null 2>&1
+
+                if [ $? -eq 0 ]; then
+                    log_success "sshpass instalado com sucesso!"
+                else
+                    log_error "Falha ao instalar sshpass. Você pode configurar SSH manualmente."
+                fi
+            else
+                log_warning "Prosseguindo sem automação SSH. Você precisará configurar a chave manualmente."
+            fi
+        fi
+    fi
+}
+
 cleanup_and_exit() {
     if [ $1 -eq 0 ]; then
         log_success "Migration completed successfully."
@@ -294,21 +337,124 @@ if [ "$AUTO_MODE" = false ]; then
     fi
 fi
 
+# Verificar dependências necessárias
+check_and_install_dependencies
+
 ### ========== SSH SETUP ==========
 log_section "SSH Setup"
 
 # Verificar chave SSH
 if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-    log_error "SSH key not found at $SSH_PRIVATE_KEY_PATH"
+    log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
+    echo ""
 
     if [ "$AUTO_MODE" = false ]; then
-        read -p "Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
-        if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-            log_error "SSH key still not found. Aborting."
-            rm -rf "$TEMP_EXTRACT_DIR"
-            exit 1
+        echo "Opções disponíveis:"
+        echo "  1. Criar nova chave SSH automaticamente (Recomendado)"
+        echo "  2. Informar caminho de chave existente"
+        echo ""
+        read -p "Escolha uma opção (1-2): " SSH_OPTION
+        SSH_OPTION=${SSH_OPTION:-1}
+
+        if [ "$SSH_OPTION" = "1" ]; then
+            # Criar nova chave SSH
+            NEW_KEY_PATH="/root/.ssh/id_rsa_migration_$(date +%Y%m%d_%H%M%S)"
+            log_info "Gerando nova chave SSH em $NEW_KEY_PATH..."
+
+            ssh-keygen -t ed25519 -f "$NEW_KEY_PATH" -N "" -C "vpsguardian-migration" >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
+                log_error "Falha ao gerar chave SSH"
+                rm -rf "$TEMP_EXTRACT_DIR"
+                exit 1
+            fi
+            log_success "Chave SSH gerada com sucesso!"
+
+            # Pedir senha do servidor remoto
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Configuração de Acesso SSH"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Para configurar o acesso SSH ao servidor de destino,"
+            echo "precisamos copiar a chave pública para o servidor."
+            echo ""
+            echo "Servidor: $NEW_SERVER_USER@$NEW_SERVER_IP:$NEW_SERVER_PORT"
+            echo ""
+            read -s -p "Digite a SENHA do servidor de destino: " REMOTE_PASSWORD
+            echo ""
+            echo ""
+
+            # Verificar se sshpass está disponível
+            if command -v sshpass >/dev/null 2>&1; then
+                log_info "Copiando chave SSH para o servidor (usando sshpass)..."
+                sshpass -p "$REMOTE_PASSWORD" ssh-copy-id -i "${NEW_KEY_PATH}.pub" \
+                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                    -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" >/dev/null 2>&1
+                SSH_COPY_EXIT=$?
+            else
+                # Usar expect se sshpass não estiver disponível
+                log_info "Copiando chave SSH para o servidor (usando expect)..."
+                expect << EOF >/dev/null 2>&1
+set timeout 30
+spawn ssh-copy-id -i ${NEW_KEY_PATH}.pub -o StrictHostKeyChecking=no -p $NEW_SERVER_PORT $NEW_SERVER_USER@$NEW_SERVER_IP
+expect {
+    "password:" {
+        send "$REMOTE_PASSWORD\r"
+        expect eof
+    }
+    "Password:" {
+        send "$REMOTE_PASSWORD\r"
+        expect eof
+    }
+    timeout { exit 1 }
+    eof
+}
+EOF
+                SSH_COPY_EXIT=$?
+            fi
+
+            # Limpar senha da memória
+            unset REMOTE_PASSWORD
+
+            if [ $SSH_COPY_EXIT -eq 0 ]; then
+                log_success "Chave SSH copiada com sucesso!"
+                SSH_PRIVATE_KEY_PATH="$NEW_KEY_PATH"
+
+                # Testar conexão
+                log_info "Testando conexão SSH..."
+                ssh -i "$SSH_PRIVATE_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 \
+                    -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" \
+                    "$NEW_SERVER_USER@$NEW_SERVER_IP" "echo OK" >/dev/null 2>&1
+
+                if [ $? -eq 0 ]; then
+                    log_success "Conexão SSH configurada e testada com sucesso!"
+                else
+                    log_error "Conexão SSH falhou. Verifique as credenciais."
+                    rm -rf "$TEMP_EXTRACT_DIR"
+                    exit 1
+                fi
+            else
+                log_error "Falha ao copiar chave SSH. Verifique a senha e conectividade."
+                log_info "Você pode:"
+                log_info "  1. Instalar sshpass: apt install sshpass"
+                log_info "  2. Copiar manualmente: ssh-copy-id -i ${NEW_KEY_PATH}.pub root@$NEW_SERVER_IP"
+                rm -rf "$TEMP_EXTRACT_DIR"
+                exit 1
+            fi
+
+        else
+            # Opção 2: Informar caminho existente
+            read -p "Caminho completo da chave SSH privada: " SSH_PRIVATE_KEY_PATH
+            if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
+                log_error "Chave SSH não encontrada: $SSH_PRIVATE_KEY_PATH"
+                rm -rf "$TEMP_EXTRACT_DIR"
+                exit 1
+            fi
         fi
     else
+        # Modo automático sem chave SSH
+        log_error "Modo automático requer chave SSH pré-configurada"
+        log_info "Configure SSH_PRIVATE_KEY_PATH antes de executar em modo --auto"
         rm -rf "$TEMP_EXTRACT_DIR"
         exit 1
     fi
