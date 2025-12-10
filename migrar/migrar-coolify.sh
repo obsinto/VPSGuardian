@@ -623,7 +623,7 @@ fi
 log_section "Update Configuration"
 log_info "Updating .env with APP_KEY from backup..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "cd /data/coolify/source && sed -i '/^APP_PREVIOUS_KEYS=/d' .env && echo 'APP_PREVIOUS_KEYS=$APP_KEY' >> .env"
+    "cd /data/coolify/source && sed -i '/^APP_PREVIOUS_KEYS=/d' .env && echo \"APP_PREVIOUS_KEYS=$APP_KEY\" >> .env"
 check_success $? ".env file updated with APP_KEY."
 
 ### ========== FINAL INSTALL ==========
