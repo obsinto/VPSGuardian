@@ -442,31 +442,17 @@ EOF
                 if [ $SSH_COPY_EXIT -eq 0 ]; then
                     log_success "✅ Chave SSH copiada com sucesso!"
                     SSH_COPY_SUCCESS=true
-
-                    # Testar conexão
-                    log_info "Testando conexão SSH..."
-                    ssh -i "$SSH_PRIVATE_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 \
-                        -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" \
-                        "$NEW_SERVER_USER@$NEW_SERVER_IP" "echo OK" >/dev/null 2>&1
-
-                    if [ $? -eq 0 ]; then
-                        log_success "✅ Conexão SSH configurada e testada com sucesso!"
-                        SSH_PRIVATE_KEY_PATH="$NEW_KEY_PATH"
-                        break
-                    else
-                        log_error "Conexão SSH falhou após copiar chave."
-                        SSH_COPY_SUCCESS=false
-                        break
-                    fi
+                    SSH_PRIVATE_KEY_PATH="$NEW_KEY_PATH"
+                    break  # Sai do loop de tentativas
                 fi
 
                 ATTEMPT=$((ATTEMPT + 1))
             done
 
-            # Verificar se conseguiu configurar SSH
+            # Verificar se conseguiu copiar a chave
             if [ "$SSH_COPY_SUCCESS" = false ]; then
                 echo ""
-                log_error "❌ Falha ao configurar SSH após $MAX_ATTEMPTS tentativas."
+                log_error "❌ Falha ao copiar chave SSH após $MAX_ATTEMPTS tentativas."
                 echo ""
                 log_info "Possíveis causas:"
                 log_info "  1. Senha incorreta"
@@ -479,6 +465,46 @@ EOF
                 echo ""
                 rm -rf "$TEMP_EXTRACT_DIR"
                 exit 1
+            fi
+
+            # Testar conexão SSH (FORA do loop de tentativas)
+            echo ""
+            log_info "Testando conexão SSH..."
+            sleep 2  # Aguardar servidor processar a nova chave
+
+            ssh -i "$SSH_PRIVATE_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 \
+                -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" \
+                "$NEW_SERVER_USER@$NEW_SERVER_IP" "echo OK" >/dev/null 2>&1
+
+            if [ $? -eq 0 ]; then
+                log_success "✅ Conexão SSH configurada e testada com sucesso!"
+            else
+                log_error "⚠️  Conexão SSH falhou, mas a chave foi copiada."
+                log_warning "Tentando novamente em 3 segundos..."
+                sleep 3
+
+                # Segunda tentativa de teste
+                ssh -i "$SSH_PRIVATE_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 \
+                    -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" \
+                    "$NEW_SERVER_USER@$NEW_SERVER_IP" "echo OK" >/dev/null 2>&1
+
+                if [ $? -eq 0 ]; then
+                    log_success "✅ Conexão SSH funcionando agora!"
+                else
+                    log_error "❌ Conexão SSH ainda falhando."
+                    echo ""
+                    log_warning "A chave foi copiada, mas não conseguimos testar a conexão."
+                    log_warning "Isso pode ser temporário. O script continuará, mas pode falhar nas próximas etapas."
+                    echo ""
+                    read -p "Deseja continuar mesmo assim? (s/N): " CONTINUE_ANYWAY
+                    CONTINUE_ANYWAY=${CONTINUE_ANYWAY:-N}
+
+                    if [[ ! "$CONTINUE_ANYWAY" =~ ^[Ss]$ ]]; then
+                        log_info "Migração cancelada pelo usuário"
+                        rm -rf "$TEMP_EXTRACT_DIR"
+                        exit 1
+                    fi
+                fi
             fi
 
         else
