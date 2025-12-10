@@ -623,26 +623,6 @@ scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" \
     "$DB_DUMP" "$NEW_SERVER_USER@$NEW_SERVER_IP:$REMOTE_BACKUP_DIR/db-dump.dmp" >/dev/null 2>&1
 check_success $? "Database dump transferred."
 
-### ========== TRANSFER SSH KEYS (LOCAL PRIORITY) ==========
-
-SOURCE_KEYS=""
-log_info "Localizando chaves SSH..."
-
-# 1. PRIORIDADE TOTAL: Sistema Local
-# Se estamos no servidor de origem, as chaves estão aqui. É o método mais seguro.
-if [ -d "/data/coolify/ssh/keys" ] && [ "$(ls -A /data/coolify/ssh/keys 2>/dev/null)" ]; then
-    SOURCE_KEYS="/data/coolify/ssh/keys"
-    log_info "✅ Fonte definida: SISTEMA LOCAL ($SOURCE_KEYS)"
-else
-    # 2. Fallback: Só olha no backup se não existirem chaves no sistema
-    log_warning "Chaves não encontradas no sistema local. Procurando no backup..."
-    FOUND_IN_BACKUP=$(find "$TEMP_EXTRACT_DIR" -type d \( -name "ssh-keys" -o -path "*/ssh/keys" \) 2>/dev/null | head -n 1)
-    
-    if [ -n "$FOUND_IN_BACKUP" ]; then
-        SOURCE_KEYS="$FOUND_IN_BACKUP"
-        log_info "✅ Fonte definida: BACKUP ($SOURCE_KEYS)"
-    fi
-fi
 
 # 3. Executa a transferência
 if [ -n "$SOURCE_KEYS" ]; then
@@ -786,6 +766,43 @@ for i in {1..30}; do
     fi
 done
 
+
+### ========== TRANSFER SSH KEYS (MOVED HERE FOR SAFETY) ==========
+# Movemos para CÁ. O instalador já rodou, agora é seguro colocar as chaves.
+
+SOURCE_KEYS=""
+log_info "Localizando chaves SSH para transferência..."
+
+# 1. Tenta achar no BACKUP (Procura inteligente)
+FOUND_IN_BACKUP=$(find "$TEMP_EXTRACT_DIR" -type d \( -name "ssh-keys" -o -path "*/ssh/keys" \) 2>/dev/null | head -n 1)
+
+if [ -n "$FOUND_IN_BACKUP" ]; then
+    SOURCE_KEYS="$FOUND_IN_BACKUP"
+    log_info "✅ Fonte encontrada no backup: $SOURCE_KEYS"
+else
+    # 2. Fallback: Usa as chaves do SISTEMA LOCAL
+    log_warning "Chaves não encontradas no backup. Verificando sistema local..."
+    if [ -d "/data/coolify/ssh/keys" ] && [ "$(ls -A /data/coolify/ssh/keys 2>/dev/null)" ]; then
+        SOURCE_KEYS="/data/coolify/ssh/keys"
+        log_info "✅ Fonte encontrada no sistema local: /data/coolify/ssh/keys"
+    fi
+fi
+
+# 3. Executa a transferência
+if [ -n "$SOURCE_KEYS" ]; then
+    log_info "Copiando chaves de: $SOURCE_KEYS"
+    
+    # Cria a pasta (caso o instalador tenha apagado)
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "mkdir -p /data/coolify/ssh/keys"
+
+    # Copia os arquivos
+    scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
+        "$SOURCE_KEYS"/. "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" >/dev/null 2>&1
+    
+    check_success $? "Chaves SSH transferidas."
+else
+    log_error "❌ Nenhuma chave encontrada para copiar!"
+fi
 # Re-configurar permissões das SSH keys após o install (CRÍTICO)
 log_info "Re-configuring SSH keys permissions after install..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
