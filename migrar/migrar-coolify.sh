@@ -295,7 +295,10 @@ log_success "Selected backup: $(basename $BACKUP_FILE)"
 TEMP_EXTRACT_DIR="/tmp/coolify-migration-$$"
 mkdir -p "$TEMP_EXTRACT_DIR"
 log_info "Extracting backup to analyze..."
-tar -xzf "$BACKUP_FILE" -C "$TEMP_EXTRACT_DIR" --strip-components=1 2>/dev/null
+
+# CORRIGIDO: Removido "--strip-components=1"
+# Isso garante que a pasta 'ssh-keys' seja extraída exatamente como está no backup
+tar -xzf "$BACKUP_FILE" -C "$TEMP_EXTRACT_DIR" 2>/dev/null
 
 # Obter APP_KEY do backup
 if [ -f "$TEMP_EXTRACT_DIR/.env" ]; then
