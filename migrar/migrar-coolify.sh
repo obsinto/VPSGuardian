@@ -806,19 +806,28 @@ echo ""
 # FIM DA DETECÇÃO DE CHAVES SSH
 # ==============================================================================
 
-# Transferir configurações do proxy (certificados SSL, configs personalizadas)
+# ==============================================================================
+# DETECÇÃO DE CONFIGURAÇÕES DO PROXY (salvar para usar após Final Install)
+# ==============================================================================
+log_info "🔍 Verificando configurações do proxy..."
+
+PROXY_SOURCE=""
+PROXY_CERTS_COUNT=0
+PROXY_CONFIGS_COUNT=0
+PROXY_RESTORE="n"
+
 if [ -d "$TEMP_EXTRACT_DIR/proxy-config" ]; then
     # Verificar se há arquivos realmente customizados
-    CERTS_COUNT=$(find "$TEMP_EXTRACT_DIR/proxy-config" -name "*.crt" -o -name "*.pem" -o -name "*.key" 2>/dev/null | wc -l)
-    CONFIGS_COUNT=$(find "$TEMP_EXTRACT_DIR/proxy-config" -name "*.conf" -o -name "*.toml" -o -name "*.yaml" 2>/dev/null | wc -l)
+    PROXY_CERTS_COUNT=$(find "$TEMP_EXTRACT_DIR/proxy-config" -name "*.crt" -o -name "*.pem" -o -name "*.key" 2>/dev/null | wc -l)
+    PROXY_CONFIGS_COUNT=$(find "$TEMP_EXTRACT_DIR/proxy-config" -name "*.conf" -o -name "*.toml" -o -name "*.yaml" 2>/dev/null | wc -l)
 
-    if [ $CERTS_COUNT -gt 0 ] || [ $CONFIGS_COUNT -gt 0 ]; then
+    if [ $PROXY_CERTS_COUNT -gt 0 ] || [ $PROXY_CONFIGS_COUNT -gt 0 ]; then
         echo ""
         log_warning "Configurações personalizadas de proxy detectadas!"
         echo ""
         echo "Foram encontradas:"
-        echo "  - $CERTS_COUNT certificado(s) SSL/TLS"
-        echo "  - $CONFIGS_COUNT arquivo(s) de configuração"
+        echo "  - $PROXY_CERTS_COUNT certificado(s) SSL/TLS"
+        echo "  - $PROXY_CONFIGS_COUNT arquivo(s) de configuração"
         echo ""
         echo "Isso pode incluir:"
         echo "  • Cloudflare Origin Certificates"
@@ -826,28 +835,24 @@ if [ -d "$TEMP_EXTRACT_DIR/proxy-config" ]; then
         echo "  • Configurações de proxy/middleware"
         echo ""
 
-        RESTORE_PROXY="n"
         if [ "$AUTO_MODE" = false ]; then
-            read -p "Deseja restaurar essas configurações no servidor novo? (s/N): " RESTORE_PROXY
-            RESTORE_PROXY=${RESTORE_PROXY:-n}
+            read -p "Deseja restaurar essas configurações no servidor novo? (s/N): " PROXY_RESTORE
+            PROXY_RESTORE=${PROXY_RESTORE:-n}
         fi
 
-        if [[ "$RESTORE_PROXY" =~ ^[Ss]$ ]]; then
-            log_info "Transferindo configurações do proxy..."
-            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-                "mkdir -p /data/coolify/proxy" 2>/dev/null
-
-            scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
-                "$TEMP_EXTRACT_DIR/proxy-config"/* "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/proxy/" >/dev/null 2>&1
+        if [[ "$PROXY_RESTORE" =~ ^[Ss]$ ]]; then
+            # Copiar para temp local antes de limpar o backup
+            TEMP_PROXY_BACKUP="/tmp/coolify-proxy-$$"
+            log_info "📦 Criando backup temporário das configurações do proxy..."
+            mkdir -p "$TEMP_PROXY_BACKUP"
+            cp -r "$TEMP_EXTRACT_DIR/proxy-config"/. "$TEMP_PROXY_BACKUP/" 2>/dev/null
 
             if [ $? -eq 0 ]; then
-                # Configurar permissões corretas
-                ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-                    "chown -R 9999:9999 /data/coolify/proxy && chmod -R 755 /data/coolify/proxy"
-                log_success "Configurações do proxy transferidas e restauradas!"
-                log_info "Certificados: $CERTS_COUNT | Configs: $CONFIGS_COUNT"
+                PROXY_SOURCE="$TEMP_PROXY_BACKUP"
+                log_success "✅ Configurações do proxy salvas para transferência posterior"
+                log_info "   Certificados: $PROXY_CERTS_COUNT | Configs: $PROXY_CONFIGS_COUNT"
             else
-                log_warning "Falha ao transferir configurações do proxy (não crítico)"
+                log_error "❌ Falha ao criar backup temporário do proxy"
             fi
         else
             log_info "Configurações do proxy não serão restauradas (usando padrões do Coolify)"
@@ -855,7 +860,13 @@ if [ -d "$TEMP_EXTRACT_DIR/proxy-config" ]; then
     else
         log_info "Nenhuma configuração personalizada de proxy detectada (usando padrões)"
     fi
+else
+    log_info "Nenhum diretório proxy-config encontrado no backup"
 fi
+echo ""
+# ==============================================================================
+# FIM DA DETECÇÃO DO PROXY
+# ==============================================================================
 
 # Transferir authorized_keys (do servidor ATUAL para o servidor NOVO)
 if [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
@@ -1017,6 +1028,51 @@ else
     log_warning "  2. Copiar manualmente: scp -r /data/coolify/ssh/keys/* root@$NEW_SERVER_IP:/data/coolify/ssh/keys/"
     log_warning "  3. Ou regenerar as chaves no Coolify (Settings > SSH Keys)"
     echo ""
+fi
+
+### ========== TRANSFER PROXY CONFIGS (AFTER FINAL INSTALL) ==========
+if [ -n "$PROXY_SOURCE" ] && [ -d "$PROXY_SOURCE" ]; then
+    log_section "Transfer Proxy Configurations"
+
+    log_info "Transferindo configurações do proxy..."
+    log_info "  Origem: $PROXY_SOURCE"
+    log_info "  Certificados: $PROXY_CERTS_COUNT"
+    log_info "  Configs: $PROXY_CONFIGS_COUNT"
+    echo ""
+
+    # Criar diretório remoto
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "mkdir -p /data/coolify/proxy" 2>/dev/null
+
+    # Transferir configurações do proxy
+    scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
+        "$PROXY_SOURCE"/. "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/proxy/" >/dev/null 2>&1
+
+    if [ $? -eq 0 ]; then
+        # Configurar permissões corretas
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "chown -R 9999:9999 /data/coolify/proxy && chmod -R 755 /data/coolify/proxy" 2>/dev/null
+
+        log_success "✅ Configurações do proxy transferidas!"
+        log_info "   Certificados: $PROXY_CERTS_COUNT | Configs: $PROXY_CONFIGS_COUNT"
+
+        # Verificar no servidor remoto
+        PROXY_FILES_COUNT=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "find /data/coolify/proxy -type f 2>/dev/null | wc -l")
+        log_info "   Arquivos no servidor remoto: $PROXY_FILES_COUNT"
+
+        # Limpar backup temporário
+        rm -rf "$PROXY_SOURCE"
+        log_info "Backup temporário do proxy removido"
+    else
+        log_error "❌ Falha ao transferir configurações do proxy"
+        log_warning "Certificados SSL e configs personalizadas podem não estar disponíveis"
+    fi
+    echo ""
+else
+    if [[ "$PROXY_RESTORE" =~ ^[Ss]$ ]]; then
+        log_warning "⚠️  Proxy deveria ser restaurado mas SOURCE não está disponível"
+    fi
 fi
 
 # Re-configurar permissões das SSH keys após o install (CRÍTICO)
