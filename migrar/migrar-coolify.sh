@@ -624,14 +624,48 @@ scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" \
 check_success $? "Database dump transferred."
 
 # Transferir SSH keys
-if [ -d "$TEMP_EXTRACT_DIR/ssh-keys" ]; then
-    log_info "Transferring SSH keys..."
+# ==============================================================================
+# INICIO DA CORREÇÃO: TRANSFERÊNCIA INTELIGENTE DE CHAVES
+# ==============================================================================
+
+# 1. Busca Inteligente: Localiza a pasta de chaves onde quer que ela esteja
+# Procura por "ssh-keys" OU "ssh/keys" dentro da extração
+SOURCE_KEYS=$(find "$TEMP_EXTRACT_DIR" -type d \( -name "ssh-keys" -o -path "*/ssh/keys" \) 2>/dev/null | head -n 1)
+
+# Se não achou no backup, tenta pegar do sistema local (Fallback de segurança)
+if [ -z "$SOURCE_KEYS" ]; then
+    if [ -d "/data/coolify/ssh/keys" ] && [ "$(ls -A /data/coolify/ssh/keys 2>/dev/null)" ]; then
+        log_info "⚠️ Chaves não encontradas no backup. Usando chaves locais (/data/coolify/ssh/keys)."
+        SOURCE_KEYS="/data/coolify/ssh/keys"
+    fi
+fi
+
+# 2. Executa a transferência se encontrou uma origem
+if [ -n "$SOURCE_KEYS" ]; then
+    log_info "✅ Fonte de chaves identificada: $SOURCE_KEYS"
+    log_info "Transferindo chaves SSH..."
+    
+    # Cria diretório no destino
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "mkdir -p /data/coolify/ssh/keys"
+
+    # Copia o CONTEÚDO da pasta encontrada
     scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
-        "$TEMP_EXTRACT_DIR/ssh-keys"/* "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" >/dev/null 2>&1
+        "$SOURCE_KEYS"/* "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" >/dev/null 2>&1
+    
+    # Ajusta permissões (CRÍTICO: User 9999 e chmod 600)
     ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
         "chown -R 9999:9999 /data/coolify/ssh/keys && chmod 700 /data/coolify/ssh/keys && chmod 600 /data/coolify/ssh/keys/*"
-    check_success $? "SSH keys transferred."
+    
+    check_success $? "Chaves SSH transferidas e permissões aplicadas."
+else
+    log_error "❌ ERRO CRÍTICO: Pasta de chaves SSH não encontrada (nem no backup, nem localmente)."
+    log_info "Conteúdo extraído para debug:"
+    ls -R "$TEMP_EXTRACT_DIR"
 fi
+
+# ==============================================================================
+# FIM DA CORREÇÃO
+# ==============================================================================
 
 # Transferir configurações do proxy (certificados SSL, configs personalizadas)
 if [ -d "$TEMP_EXTRACT_DIR/proxy-config" ]; then
