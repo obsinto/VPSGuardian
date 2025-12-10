@@ -527,6 +527,57 @@ if [ -d "$TEMP_EXTRACT_DIR/ssh-keys" ]; then
     check_success $? "SSH keys transferred."
 fi
 
+# Transferir configurações do proxy (certificados SSL, configs personalizadas)
+if [ -d "$TEMP_EXTRACT_DIR/proxy-config" ]; then
+    # Verificar se há arquivos realmente customizados
+    CERTS_COUNT=$(find "$TEMP_EXTRACT_DIR/proxy-config" -name "*.crt" -o -name "*.pem" -o -name "*.key" 2>/dev/null | wc -l)
+    CONFIGS_COUNT=$(find "$TEMP_EXTRACT_DIR/proxy-config" -name "*.conf" -o -name "*.toml" -o -name "*.yaml" 2>/dev/null | wc -l)
+
+    if [ $CERTS_COUNT -gt 0 ] || [ $CONFIGS_COUNT -gt 0 ]; then
+        echo ""
+        log_warning "Configurações personalizadas de proxy detectadas!"
+        echo ""
+        echo "Foram encontradas:"
+        echo "  - $CERTS_COUNT certificado(s) SSL/TLS"
+        echo "  - $CONFIGS_COUNT arquivo(s) de configuração"
+        echo ""
+        echo "Isso pode incluir:"
+        echo "  • Cloudflare Origin Certificates"
+        echo "  • Certificados SSL personalizados"
+        echo "  • Configurações de proxy/middleware"
+        echo ""
+
+        RESTORE_PROXY="n"
+        if [ "$AUTO_MODE" = false ]; then
+            read -p "Deseja restaurar essas configurações no servidor novo? (s/N): " RESTORE_PROXY
+            RESTORE_PROXY=${RESTORE_PROXY:-n}
+        fi
+
+        if [[ "$RESTORE_PROXY" =~ ^[Ss]$ ]]; then
+            log_info "Transferindo configurações do proxy..."
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+                "mkdir -p /data/coolify/proxy" 2>/dev/null
+
+            scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
+                "$TEMP_EXTRACT_DIR/proxy-config"/* "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/proxy/" >/dev/null 2>&1
+
+            if [ $? -eq 0 ]; then
+                # Configurar permissões corretas
+                ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+                    "chown -R 9999:9999 /data/coolify/proxy && chmod -R 755 /data/coolify/proxy"
+                log_success "Configurações do proxy transferidas e restauradas!"
+                log_info "Certificados: $CERTS_COUNT | Configs: $CONFIGS_COUNT"
+            else
+                log_warning "Falha ao transferir configurações do proxy (não crítico)"
+            fi
+        else
+            log_info "Configurações do proxy não serão restauradas (usando padrões do Coolify)"
+        fi
+    else
+        log_info "Nenhuma configuração personalizada de proxy detectada (usando padrões)"
+    fi
+fi
+
 # Transferir authorized_keys
 if [ -f "$TEMP_EXTRACT_DIR/authorized_keys" ] || [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
     log_info "Appending authorized_keys to remote server..."

@@ -126,6 +126,25 @@ if [ -f "/root/.ssh/authorized_keys" ]; then
     log_success "Arquivo authorized_keys backupeado"
 fi
 
+# Backup das configurações do proxy (certificados SSL, configs personalizadas)
+COOLIFY_PROXY_DIR="$COOLIFY_DATA_DIR/proxy"
+if [ -d "$COOLIFY_PROXY_DIR" ]; then
+    log_info "Backupeando configurações do proxy..."
+    cp -r "$COOLIFY_PROXY_DIR" "$BACKUP_DIR/proxy-config"
+
+    # Contar arquivos importantes
+    CERTS_COUNT=$(find "$BACKUP_DIR/proxy-config" -name "*.crt" -o -name "*.pem" -o -name "*.key" | wc -l)
+    CONFIGS_COUNT=$(find "$BACKUP_DIR/proxy-config" -name "*.conf" -o -name "*.toml" -o -name "*.yaml" | wc -l)
+
+    if [ $CERTS_COUNT -gt 0 ] || [ $CONFIGS_COUNT -gt 0 ]; then
+        log_success "Configurações do proxy backupeadas (certificados: $CERTS_COUNT, configs: $CONFIGS_COUNT)"
+    else
+        log_info "Configurações do proxy backupeadas (diretório vazio ou padrão)"
+    fi
+else
+    log_warning "Diretório de proxy não encontrado: $COOLIFY_PROXY_DIR (pode estar usando configuração padrão)"
+fi
+
 ################################################################################
 # 4. BACKUP DE VOLUMES DOCKER (OPCIONAL)
 ################################################################################
@@ -196,6 +215,7 @@ cat > "$BACKUP_DIR/backup-info.txt" <<EOF
   ✓ Arquivo .env e APP_KEY extraída
   ✓ Arquivo authorized_keys do root
   ✓ Configurações do Nginx
+  ✓ Configurações do Proxy (certificados SSL, configs personalizadas)
   ✓ Lista de volumes Docker
   ✓ Informações do sistema
 
@@ -284,7 +304,7 @@ Data: $(date '+%d/%m/%Y %H:%M')
 📊 Conteúdo:
   - Banco de dados PostgreSQL: ✓
   - SSH Keys: ✓
-  - Configurações (.env, Nginx): ✓
+  - Configurações (.env, Nginx, Proxy): ✓
   - authorized_keys: ✓
   - Lista de volumes: ✓
 
