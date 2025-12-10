@@ -868,25 +868,6 @@ echo ""
 # FIM DA DETECÇÃO DO PROXY
 # ==============================================================================
 
-# Transferir authorized_keys (do servidor ATUAL para o servidor NOVO)
-if [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
-    log_info "Appending local authorized_keys to remote $NEW_SERVER_AUTH_KEYS_FILE"
-
-    # Criar diretório, arquivo e copiar chaves (tudo em um comando)
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "mkdir -p $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && touch $NEW_SERVER_AUTH_KEYS_FILE && cat >> $NEW_SERVER_AUTH_KEYS_FILE" \
-        < "$LOCAL_AUTH_KEYS_FILE"
-
-    # Configurar permissões corretas (CRÍTICO para SSH funcionar)
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "chmod 700 $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && chmod 600 $NEW_SERVER_AUTH_KEYS_FILE"
-
-    check_success $? "Authorized keys appended and permissions set."
-else
-    log_warning "Local authorized_keys file not found: $LOCAL_AUTH_KEYS_FILE"
-    log_warning "You may need to configure SSH access manually after migration."
-fi
-
 # Limpar diretório temporário
 rm -rf "$TEMP_EXTRACT_DIR"
 
@@ -910,13 +891,6 @@ else
     log_warning "Database restore may have encountered issues. Check $DB_RESTORE_LOG"
 fi
 
-### ========== UPDATE ENV FILE ==========
-log_section "Update Configuration"
-log_info "Updating .env with APP_KEY from backup..."
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "cd /data/coolify/source && sed -i '/^APP_PREVIOUS_KEYS=/d' .env && echo \"APP_PREVIOUS_KEYS=$APP_KEY\" >> .env"
-check_success $? ".env file updated with APP_KEY."
-
 ### ========== FINAL INSTALL ==========
 log_section "Final Install"
 log_info "Running final Coolify install to apply all changes..."
@@ -932,6 +906,51 @@ for i in {1..30}; do
         break
     fi
 done
+
+### ========== UPDATE APP_KEY (AFTER FINAL INSTALL) ==========
+log_section "Update APP_KEY"
+log_info "⚠️  CRÍTICO: Configurando APP_KEY do backup no .env..."
+echo ""
+log_info "APP_KEY é usado para criptografar dados sensíveis:"
+log_info "  • Senhas de servidores"
+log_info "  • Tokens de API (GitHub, GitLab, etc.)"
+log_info "  • Chaves privadas de deploy"
+log_info "  • Credenciais de banco de dados"
+echo ""
+
+# Verificar se .env existe
+ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+    "test -f /data/coolify/source/.env"
+
+if [ $? -eq 0 ]; then
+    log_info "Arquivo .env encontrado. Atualizando com APP_KEY do backup..."
+
+    # Atualizar APP_KEY no .env
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "cd /data/coolify/source && sed -i '/^APP_PREVIOUS_KEYS=/d' .env && echo \"APP_PREVIOUS_KEYS=$APP_KEY\" >> .env"
+
+    if [ $? -eq 0 ]; then
+        log_success "✅ APP_KEY configurado com sucesso!"
+
+        # Verificar se foi aplicado
+        APPLIED_KEY=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "grep '^APP_PREVIOUS_KEYS=' /data/coolify/source/.env | cut -d'=' -f2-")
+
+        if [ -n "$APPLIED_KEY" ]; then
+            log_success "✅ APP_KEY verificado no .env"
+            log_info "   Primeiros 20 caracteres: ${APPLIED_KEY:0:20}..."
+        else
+            log_error "❌ APP_KEY não encontrado após configuração!"
+        fi
+    else
+        log_error "❌ Falha ao configurar APP_KEY!"
+        log_warning "Dados criptografados podem não ser acessíveis!"
+    fi
+else
+    log_error "❌ Arquivo .env não encontrado em /data/coolify/source/"
+    log_warning "APP_KEY não pode ser configurado. O Coolify pode não funcionar corretamente."
+fi
+echo ""
 
 ### ========== TRANSFER SSH KEYS (AFTER FINAL INSTALL) ==========
 log_section "Transfer SSH Keys"
@@ -1073,6 +1092,42 @@ else
     if [[ "$PROXY_RESTORE" =~ ^[Ss]$ ]]; then
         log_warning "⚠️  Proxy deveria ser restaurado mas SOURCE não está disponível"
     fi
+fi
+
+### ========== TRANSFER AUTHORIZED_KEYS (AFTER FINAL INSTALL) ==========
+log_section "Transfer Authorized Keys"
+
+if [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
+    log_info "Transferindo authorized_keys do servidor local para o remoto..."
+    log_info "  Arquivo local: $LOCAL_AUTH_KEYS_FILE"
+    log_info "  Destino remoto: $NEW_SERVER_AUTH_KEYS_FILE"
+    echo ""
+
+    # Criar diretório, arquivo e copiar chaves (tudo em um comando)
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "mkdir -p $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && touch $NEW_SERVER_AUTH_KEYS_FILE && cat >> $NEW_SERVER_AUTH_KEYS_FILE" \
+        < "$LOCAL_AUTH_KEYS_FILE"
+
+    if [ $? -eq 0 ]; then
+        # Configurar permissões corretas (CRÍTICO para SSH funcionar)
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "chmod 700 $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && chmod 600 $NEW_SERVER_AUTH_KEYS_FILE" 2>/dev/null
+
+        log_success "✅ Authorized keys transferidas com sucesso!"
+
+        # Verificar quantas chaves foram adicionadas
+        KEYS_IN_FILE=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "wc -l < $NEW_SERVER_AUTH_KEYS_FILE 2>/dev/null" | tr -d ' ')
+        log_info "   Total de chaves no arquivo remoto: $KEYS_IN_FILE"
+    else
+        log_error "❌ Falha ao transferir authorized_keys"
+        log_warning "Você pode precisar configurar acesso SSH manualmente"
+    fi
+    echo ""
+else
+    log_warning "⚠️  Arquivo authorized_keys local não encontrado: $LOCAL_AUTH_KEYS_FILE"
+    log_warning "Acesso SSH futuro pode precisar ser configurado manualmente"
+    echo ""
 fi
 
 # Re-configurar permissões das SSH keys após o install (CRÍTICO)
