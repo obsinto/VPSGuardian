@@ -746,6 +746,21 @@ for i in {1..30}; do
     fi
 done
 
+# Re-configurar permissões das SSH keys após o install (CRÍTICO)
+log_info "Re-configuring SSH keys permissions after install..."
+ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+    "chown -R 9999:9999 /data/coolify/ssh/keys 2>/dev/null && \
+     chmod 700 /data/coolify/ssh/keys 2>/dev/null && \
+     find /data/coolify/ssh/keys -type f -exec chmod 600 {} \; 2>/dev/null"
+log_success "SSH keys permissions re-configured."
+
+# Reiniciar Coolify para forçar re-validação das chaves SSH
+log_info "Restarting Coolify to reload SSH keys..."
+ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+    "docker restart coolify 2>/dev/null || true"
+sleep 10  # Aguardar Coolify reiniciar
+log_success "Coolify restarted."
+
 # Verificar status dos containers
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "docker ps --filter name=coolify --format '{{.Names}} {{.Status}}'" \
