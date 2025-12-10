@@ -222,7 +222,7 @@ prepare_installation() {
 
     # Criar diretórios
     log_info "Criando diretórios..."
-    mkdir -p "$INSTALL_ROOT"/{backup,manutencao,migrar,scripts-auxiliares,docs}
+    mkdir -p "$INSTALL_ROOT"/{backup,manutencao,migrar,scripts-auxiliares,docs,lib}
     mkdir -p "$BACKUP_ROOT"/{coolify,volumes,databases}
     mkdir -p "$LOG_ROOT"
     log_success "Diretórios criados"
@@ -274,6 +274,15 @@ install_scripts() {
     done
     log_success "Scripts auxiliares instalados"
 
+    # Instalar bibliotecas compartilhadas
+    log_info "Instalando bibliotecas compartilhadas..."
+    for lib in lib/*.sh; do
+        if [ -f "$lib" ]; then
+            $link_cmd "$(pwd)/$lib" "$INSTALL_ROOT/lib/$(basename $lib)"
+        fi
+    done
+    log_success "Bibliotecas instaladas"
+
     # Instalar menu principal
     log_info "Instalando menu principal..."
     $link_cmd "$(pwd)/menu-principal.sh" "$INSTALL_ROOT/menu-principal.sh"
@@ -297,7 +306,7 @@ set_permissions() {
     log_success "Permissões configuradas"
 
     log_info "Configurando permissões de diretórios..."
-    chmod 755 "$INSTALL_ROOT"/{backup,manutencao,migrar,scripts-auxiliares,docs}
+    chmod 755 "$INSTALL_ROOT"/{backup,manutencao,migrar,scripts-auxiliares,docs,lib}
     chmod 755 "$BACKUP_ROOT"/{coolify,volumes,databases}
     chmod 755 "$LOG_ROOT"
     log_success "Permissões de diretórios OK"
