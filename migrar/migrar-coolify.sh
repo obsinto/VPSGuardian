@@ -372,7 +372,7 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
             fi
             log_success "Chave SSH gerada com sucesso!"
 
-            # Pedir senha do servidor remoto
+            # Pedir senha do servidor remoto (com retry)
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Configuração de Acesso SSH"
@@ -383,21 +383,41 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
             echo ""
             echo "Servidor: $NEW_SERVER_USER@$NEW_SERVER_IP:$NEW_SERVER_PORT"
             echo ""
-            read -s -p "Digite a SENHA do servidor de destino: " REMOTE_PASSWORD
-            echo ""
-            echo ""
 
-            # Verificar se sshpass está disponível
-            if command -v sshpass >/dev/null 2>&1; then
-                log_info "Copiando chave SSH para o servidor (usando sshpass)..."
-                sshpass -p "$REMOTE_PASSWORD" ssh-copy-id -i "${NEW_KEY_PATH}.pub" \
-                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                    -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" >/dev/null 2>&1
-                SSH_COPY_EXIT=$?
-            else
-                # Usar expect se sshpass não estiver disponível
-                log_info "Copiando chave SSH para o servidor (usando expect)..."
-                expect << EOF >/dev/null 2>&1
+            # Loop de tentativas (máximo 3 tentativas)
+            MAX_ATTEMPTS=3
+            ATTEMPT=1
+            SSH_COPY_SUCCESS=false
+
+            while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+                if [ $ATTEMPT -gt 1 ]; then
+                    echo ""
+                    log_warning "❌ Senha incorreta ou falha na conexão."
+                    echo ""
+                fi
+
+                read -s -p "Digite a SENHA do servidor de destino (tentativa $ATTEMPT/$MAX_ATTEMPTS): " REMOTE_PASSWORD
+                echo ""
+                echo ""
+
+                # Verificar se senha não está vazia
+                if [ -z "$REMOTE_PASSWORD" ]; then
+                    log_error "Senha não pode estar vazia!"
+                    ATTEMPT=$((ATTEMPT + 1))
+                    continue
+                fi
+
+                # Verificar se sshpass está disponível
+                if command -v sshpass >/dev/null 2>&1; then
+                    log_info "Copiando chave SSH para o servidor (usando sshpass)..."
+                    sshpass -p "$REMOTE_PASSWORD" ssh-copy-id -i "${NEW_KEY_PATH}.pub" \
+                        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                        -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" >/dev/null 2>&1
+                    SSH_COPY_EXIT=$?
+                else
+                    # Usar expect se sshpass não estiver disponível
+                    log_info "Copiando chave SSH para o servidor (usando expect)..."
+                    expect << EOF >/dev/null 2>&1
 set timeout 30
 spawn ssh-copy-id -i ${NEW_KEY_PATH}.pub -o StrictHostKeyChecking=no -p $NEW_SERVER_PORT $NEW_SERVER_USER@$NEW_SERVER_IP
 expect {
@@ -413,34 +433,50 @@ expect {
     eof
 }
 EOF
-                SSH_COPY_EXIT=$?
-            fi
-
-            # Limpar senha da memória
-            unset REMOTE_PASSWORD
-
-            if [ $SSH_COPY_EXIT -eq 0 ]; then
-                log_success "Chave SSH copiada com sucesso!"
-                SSH_PRIVATE_KEY_PATH="$NEW_KEY_PATH"
-
-                # Testar conexão
-                log_info "Testando conexão SSH..."
-                ssh -i "$SSH_PRIVATE_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 \
-                    -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" \
-                    "$NEW_SERVER_USER@$NEW_SERVER_IP" "echo OK" >/dev/null 2>&1
-
-                if [ $? -eq 0 ]; then
-                    log_success "Conexão SSH configurada e testada com sucesso!"
-                else
-                    log_error "Conexão SSH falhou. Verifique as credenciais."
-                    rm -rf "$TEMP_EXTRACT_DIR"
-                    exit 1
+                    SSH_COPY_EXIT=$?
                 fi
-            else
-                log_error "Falha ao copiar chave SSH. Verifique a senha e conectividade."
-                log_info "Você pode:"
-                log_info "  1. Instalar sshpass: apt install sshpass"
-                log_info "  2. Copiar manualmente: ssh-copy-id -i ${NEW_KEY_PATH}.pub root@$NEW_SERVER_IP"
+
+                # Limpar senha da memória
+                unset REMOTE_PASSWORD
+
+                if [ $SSH_COPY_EXIT -eq 0 ]; then
+                    log_success "✅ Chave SSH copiada com sucesso!"
+                    SSH_COPY_SUCCESS=true
+
+                    # Testar conexão
+                    log_info "Testando conexão SSH..."
+                    ssh -i "$SSH_PRIVATE_KEY_PATH" -o BatchMode=yes -o ConnectTimeout=10 \
+                        -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" \
+                        "$NEW_SERVER_USER@$NEW_SERVER_IP" "echo OK" >/dev/null 2>&1
+
+                    if [ $? -eq 0 ]; then
+                        log_success "✅ Conexão SSH configurada e testada com sucesso!"
+                        SSH_PRIVATE_KEY_PATH="$NEW_KEY_PATH"
+                        break
+                    else
+                        log_error "Conexão SSH falhou após copiar chave."
+                        SSH_COPY_SUCCESS=false
+                        break
+                    fi
+                fi
+
+                ATTEMPT=$((ATTEMPT + 1))
+            done
+
+            # Verificar se conseguiu configurar SSH
+            if [ "$SSH_COPY_SUCCESS" = false ]; then
+                echo ""
+                log_error "❌ Falha ao configurar SSH após $MAX_ATTEMPTS tentativas."
+                echo ""
+                log_info "Possíveis causas:"
+                log_info "  1. Senha incorreta"
+                log_info "  2. Servidor não está acessível"
+                log_info "  3. Firewall bloqueando conexão SSH"
+                log_info "  4. Porta SSH diferente de $NEW_SERVER_PORT"
+                echo ""
+                log_info "Você pode configurar manualmente:"
+                log_info "  ssh-copy-id -i ${NEW_KEY_PATH}.pub -p $NEW_SERVER_PORT $NEW_SERVER_USER@$NEW_SERVER_IP"
+                echo ""
                 rm -rf "$TEMP_EXTRACT_DIR"
                 exit 1
             fi
