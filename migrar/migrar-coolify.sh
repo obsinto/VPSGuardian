@@ -153,10 +153,34 @@ if [ -z "$BACKUP_FILE" ]; then
     if [ "$AUTO_MODE" = true ]; then
         BACKUP_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
         if [ -z "$BACKUP_FILE" ]; then
-            log_error "No backups found in $BACKUP_DIR"
-            exit 1
+            log_warning "No backups found in $BACKUP_DIR"
+            log_info "Creating backup automatically..."
+
+            # Determinar caminho do script de backup
+            BACKUP_SCRIPT="$SCRIPT_DIR/../backup/backup-coolify.sh"
+            if [ ! -f "$BACKUP_SCRIPT" ]; then
+                log_error "Backup script not found: $BACKUP_SCRIPT"
+                exit 1
+            fi
+
+            # Executar backup
+            if bash "$BACKUP_SCRIPT"; then
+                log_success "Backup created successfully!"
+
+                # Buscar o backup mais recente
+                BACKUP_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
+                if [ -z "$BACKUP_FILE" ]; then
+                    log_error "Failed to locate created backup"
+                    exit 1
+                fi
+                log_info "Using newly created backup: $(basename $BACKUP_FILE)"
+            else
+                log_error "Failed to create backup"
+                exit 1
+            fi
+        else
+            log_info "Using most recent backup: $(basename $BACKUP_FILE)"
         fi
-        log_info "Using most recent backup: $(basename $BACKUP_FILE)"
     else
         # Modo interativo - listar backups
         log_info "Available backups:"
@@ -174,9 +198,45 @@ if [ -z "$BACKUP_FILE" ]; then
             BACKUP_INDEX=${BACKUP_INDEX:-0}
             BACKUP_FILE="${BACKUPS[$BACKUP_INDEX]}"
         else
-            log_error "No backups found in $BACKUP_DIR"
-            log_info "Please run backup-coolify.sh first to create a backup"
-            exit 1
+            log_warning "No backups found in $BACKUP_DIR"
+            echo ""
+            echo "Você precisa de um backup do Coolify antes de migrar."
+            echo ""
+            read -p "Deseja criar um backup agora? (S/n): " CREATE_BACKUP
+            CREATE_BACKUP=${CREATE_BACKUP:-S}
+
+            if [[ "$CREATE_BACKUP" =~ ^[Ss]$ ]]; then
+                log_info "Criando backup do Coolify..."
+                echo ""
+
+                # Determinar caminho do script de backup
+                BACKUP_SCRIPT="$SCRIPT_DIR/../backup/backup-coolify.sh"
+                if [ ! -f "$BACKUP_SCRIPT" ]; then
+                    log_error "Script de backup não encontrado: $BACKUP_SCRIPT"
+                    exit 1
+                fi
+
+                # Executar backup
+                if bash "$BACKUP_SCRIPT"; then
+                    log_success "Backup criado com sucesso!"
+                    echo ""
+
+                    # Buscar o backup mais recente
+                    BACKUP_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
+                    if [ -z "$BACKUP_FILE" ]; then
+                        log_error "Falha ao localizar o backup criado"
+                        exit 1
+                    fi
+                    log_info "Usando backup recém-criado: $(basename $BACKUP_FILE)"
+                else
+                    log_error "Falha ao criar backup"
+                    exit 1
+                fi
+            else
+                log_info "Backup cancelado pelo usuário"
+                log_info "Execute 'vps-guardian backup' ou 'backup-coolify.sh' primeiro"
+                exit 1
+            fi
         fi
     fi
 fi
