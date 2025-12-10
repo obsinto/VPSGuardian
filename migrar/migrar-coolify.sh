@@ -681,22 +681,23 @@ if [ -d "$TEMP_EXTRACT_DIR/proxy-config" ]; then
     fi
 fi
 
-# Transferir authorized_keys
-if [ -f "$TEMP_EXTRACT_DIR/authorized_keys" ] || [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
-    log_info "Appending authorized_keys to remote server..."
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "mkdir -p $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && touch $NEW_SERVER_AUTH_KEYS_FILE" 2>/dev/null
+# Transferir authorized_keys (do servidor ATUAL para o servidor NOVO)
+if [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
+    log_info "Appending local authorized_keys to remote $NEW_SERVER_AUTH_KEYS_FILE"
 
-    if [ -f "$TEMP_EXTRACT_DIR/authorized_keys" ]; then
-        cat "$TEMP_EXTRACT_DIR/authorized_keys" | \
-            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-            "cat >> $NEW_SERVER_AUTH_KEYS_FILE"
-    elif [ -f "$LOCAL_AUTH_KEYS_FILE" ]; then
-        cat "$LOCAL_AUTH_KEYS_FILE" | \
-            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-            "cat >> $NEW_SERVER_AUTH_KEYS_FILE"
-    fi
-    check_success $? "Authorized keys appended."
+    # Criar diretório, arquivo e copiar chaves (tudo em um comando)
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "mkdir -p $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && touch $NEW_SERVER_AUTH_KEYS_FILE && cat >> $NEW_SERVER_AUTH_KEYS_FILE" \
+        < "$LOCAL_AUTH_KEYS_FILE"
+
+    # Configurar permissões corretas (CRÍTICO para SSH funcionar)
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "chmod 700 $(dirname $NEW_SERVER_AUTH_KEYS_FILE) && chmod 600 $NEW_SERVER_AUTH_KEYS_FILE"
+
+    check_success $? "Authorized keys appended and permissions set."
+else
+    log_warning "Local authorized_keys file not found: $LOCAL_AUTH_KEYS_FILE"
+    log_warning "You may need to configure SSH access manually after migration."
 fi
 
 # Limpar diretório temporário
