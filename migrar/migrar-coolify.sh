@@ -900,6 +900,14 @@ if [ -n "$SOURCE_KEYS" ] && [ -d "$SOURCE_KEYS" ]; then
     if [ $SCP_EXIT_CODE -eq 0 ]; then
         log_success "✅ Comando SCP executado com sucesso!"
 
+        # IMEDIATAMENTE após transferir, configurar permissões corretas
+        log_info "Configurando permissões imediatamente após transferência..."
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "chown -R 9999:9999 /data/coolify/ssh/keys && \
+             chmod 700 /data/coolify/ssh/keys && \
+             find /data/coolify/ssh/keys -type f -exec chmod 600 {} \;" 2>/dev/null
+        check_success $? "Permissões configuradas (9999:9999, 600)"
+
         # Verificar quantos arquivos foram transferidos
         log_info "Verificando arquivos no servidor remoto..."
         TRANSFERRED_COUNT=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
@@ -909,9 +917,9 @@ if [ -n "$SOURCE_KEYS" ] && [ -d "$SOURCE_KEYS" ]; then
             log_success "✅ Chaves SSH transferidas com sucesso!"
             log_success "   Arquivos no servidor remoto: $TRANSFERRED_COUNT"
 
-            # Listar arquivos transferidos
+            # Listar arquivos transferidos com permissões corretas
             echo ""
-            log_info "Arquivos no servidor remoto:"
+            log_info "Arquivos no servidor remoto (com permissões corretas):"
             ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
                 "ls -lh /data/coolify/ssh/keys" 2>/dev/null | tail -n +2 | while read line; do
                 log_info "  $line"
@@ -963,6 +971,53 @@ ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "docker restart coolify 2>/dev/null || true"
 sleep 10  # Aguardar Coolify reiniciar
 log_success "Coolify restarted."
+
+# VERIFICAÇÃO CRÍTICA: Confirmar que chaves SSH ainda existem após restart
+log_info "Verificando se chaves SSH persistiram após restart do Coolify..."
+KEYS_AFTER_RESTART=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+    "find /data/coolify/ssh/keys -type f 2>/dev/null | wc -l")
+
+if [ "$KEYS_AFTER_RESTART" -gt 0 ]; then
+    log_success "✅ Chaves SSH verificadas após restart: $KEYS_AFTER_RESTART arquivos"
+
+    # Mostrar detalhes das chaves
+    echo ""
+    log_info "Chaves SSH finais (após restart):"
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "ls -lh /data/coolify/ssh/keys" 2>/dev/null | tail -n +2 | while read line; do
+        log_info "  $line"
+    done
+    echo ""
+else
+    log_error "❌ CRÍTICO: Chaves SSH DESAPARECERAM após restart do Coolify!"
+    log_error "Isso pode indicar:"
+    log_error "  1. Volume Docker não está persistindo os dados"
+    log_error "  2. Coolify está recriando/limpando o diretório"
+    log_error "  3. Permissões incorretas impedem o acesso"
+    echo ""
+    log_warning "Tentando recriar as chaves..."
+
+    # Tentar transferir novamente
+    if [ -n "$SOURCE_KEYS" ] && [ -d "$SOURCE_KEYS" ]; then
+        scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" -r \
+            "$SOURCE_KEYS"/. "$NEW_SERVER_USER@$NEW_SERVER_IP:/data/coolify/ssh/keys/" >/dev/null 2>&1
+
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "chown -R 9999:9999 /data/coolify/ssh/keys && \
+             chmod 700 /data/coolify/ssh/keys && \
+             find /data/coolify/ssh/keys -type f -exec chmod 600 {} \;" 2>/dev/null
+
+        # Verificar novamente
+        RETRY_COUNT=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+            "find /data/coolify/ssh/keys -type f 2>/dev/null | wc -l")
+
+        if [ "$RETRY_COUNT" -gt 0 ]; then
+            log_success "✅ Chaves SSH restauradas com sucesso!"
+        else
+            log_error "❌ Falha ao restaurar chaves SSH"
+        fi
+    fi
+fi
 
 # Verificar status dos containers
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
