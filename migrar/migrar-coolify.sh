@@ -1267,9 +1267,12 @@ if [ "$MIGRATE_VOLUMES" = "yes" ] || [ "$MIGRATE_VOLUMES" = "y" ]; then
         export NEW_SERVER_PORT
         export SSH_PRIVATE_KEY_PATH
         export CONTROL_SOCKET
+        export SSH_AUTH_METHOD="key"  # Coolify sempre usa chave SSH
+        export COOLIFY_MIGRATION="true"  # Flag para indicar que vem do Coolify
 
         # Executar script de migração de volumes
         log_info "Launching volume migration script..."
+        log_info "Reusing SSH connection from Coolify migration..."
         echo ""
 
         # Executar em subshell para não interferir com o cleanup atual

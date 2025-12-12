@@ -233,26 +233,41 @@ echo ""
 
 ### ========== PROMPTS INTERATIVOS ==========
 
-log_section "SERVER CONFIGURATION"
+log_section "CONFIGURAÇÃO DO SERVIDOR"
 
-if [ -z "$NEW_SERVER_IP" ]; then
-    echo -e "${BLUE}Enter destination server details:${NC}"
+# Verificar se está sendo chamado pela migração do Coolify
+if [ "$COOLIFY_MIGRATION" = "true" ]; then
+    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║${NC}  ✅ Reutilizando configurações da migração do Coolify      ${GREEN}║${NC}"
+    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    read -p "  New server IP address: " NEW_SERVER_IP
-fi
-log_success "Target server: $NEW_SERVER_IP"
+    log_success "Servidor de destino: $NEW_SERVER_IP"
+    log_success "Usuário SSH: $NEW_SERVER_USER"
+    log_success "Porta SSH: $NEW_SERVER_PORT"
+    log_success "Método de autenticação: Chave SSH"
+    log_success "Conexão SSH: Reutilizando conexão persistente"
+    echo ""
+else
+    # Modo normal: solicitar informações
+    if [ -z "$NEW_SERVER_IP" ]; then
+        echo -e "${BLUE}Digite os detalhes do servidor de destino:${NC}"
+        echo ""
+        read -p "  Endereço IP do novo servidor: " NEW_SERVER_IP
+    fi
+    log_success "Servidor de destino: $NEW_SERVER_IP"
 
-if [ -z "$NEW_SERVER_USER" ] || [ "$NEW_SERVER_USER" = "root" ]; then
-    read -p "  SSH user (default: root): " INPUT_USER
-    NEW_SERVER_USER=${INPUT_USER:-root}
-fi
-log_info "SSH user: $NEW_SERVER_USER"
+    if [ -z "$NEW_SERVER_USER" ] || [ "$NEW_SERVER_USER" = "root" ]; then
+        read -p "  Usuário SSH (padrão: root): " INPUT_USER
+        NEW_SERVER_USER=${INPUT_USER:-root}
+    fi
+    log_info "Usuário SSH: $NEW_SERVER_USER"
 
-if [ -z "$NEW_SERVER_PORT" ] || [ "$NEW_SERVER_PORT" = "22" ]; then
-    read -p "  SSH port (default: 22): " INPUT_PORT
-    NEW_SERVER_PORT=${INPUT_PORT:-22}
+    if [ -z "$NEW_SERVER_PORT" ] || [ "$NEW_SERVER_PORT" = "22" ]; then
+        read -p "  Porta SSH (padrão: 22): " INPUT_PORT
+        NEW_SERVER_PORT=${INPUT_PORT:-22}
+    fi
+    log_info "Porta SSH: $NEW_SERVER_PORT"
 fi
-log_info "SSH port: $NEW_SERVER_PORT"
 
 # SEMPRE criar backups fresh na execução
 log_section "CREATING FRESH VOLUME BACKUPS"
@@ -497,12 +512,19 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 
 ### ========== ESCOLHER MÉTODO DE AUTENTICAÇÃO SSH ==========
-log_section "MÉTODO DE AUTENTICAÇÃO SSH"
 
-echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}  Escolha o método de autenticação SSH para o servidor      ${CYAN}║${NC}"
-echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
+# Pular seleção de método SSH se vem do Coolify
+if [ "$COOLIFY_MIGRATION" = "true" ]; then
+    log_section "AUTENTICAÇÃO SSH"
+    log_success "✅ Reutilizando método de autenticação do Coolify (Chave SSH)"
+    # SSH_AUTH_METHOD já foi exportado pelo migrar-coolify.sh
+else
+    log_section "MÉTODO DE AUTENTICAÇÃO SSH"
+
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}  Escolha o método de autenticação SSH para o servidor      ${CYAN}║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
 echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${GREEN}[1] Chave SSH (RECOMENDADO) 🔑${NC}"
 echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -599,13 +621,17 @@ elif [ "$AUTH_CHOICE" = "2" ]; then
     fi
 
     log_success "Senha configurada com sucesso."
-else
-    log_error "Opção inválida. Abortando."
-    exit 1
-fi
+    else
+        log_error "Opção inválida. Abortando."
+        exit 1
+    fi
+fi  # Fim do if COOLIFY_MIGRATION
 
 ### ========== CONFIGURAÇÃO SSH ==========
-log_info "Configurando conexão SSH com o servidor de destino..."
+
+if [ "$COOLIFY_MIGRATION" != "true" ]; then
+    log_info "Configurando conexão SSH com o servidor de destino..."
+fi
 
 # Verificar se já existe uma conexão SSH ativa (herdada de migrar-coolify.sh)
 SSH_REUSED=false
