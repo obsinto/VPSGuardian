@@ -351,26 +351,133 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
     log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
     echo ""
 
+    # Procurar por chaves de migração anteriores
+    MIGRATION_KEYS=($(ls -t /root/.ssh/id_rsa_migration* 2>/dev/null | grep -v "\.pub$" | head -5))
+
+    if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}  ⚠️  Encontradas ${#MIGRATION_KEYS[@]} chave(s) de migração anterior(es)${NC}"
+        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+        echo ""
+
+        LATEST_KEY="${MIGRATION_KEYS[0]}"
+        KEY_DATE=$(stat -c %y "$LATEST_KEY" 2>/dev/null | cut -d' ' -f1)
+
+        echo "  Chave mais recente: $(basename $LATEST_KEY)"
+        echo "  Data de criação: $KEY_DATE"
+        echo ""
+
+        log_warning "Gerar novas chaves a cada migração causa:"
+        echo "  ❌ Acúmulo de chaves antigas no ~/.ssh/"
+        echo "  ❌ authorized_keys crescendo no servidor remoto"
+        echo "  ❌ Dificulta rastreamento de qual chave usar"
+        echo ""
+    fi
+
     if [ "$AUTO_MODE" = false ]; then
         echo "Opções disponíveis:"
-        echo "  1. Criar nova chave SSH automaticamente (Recomendado)"
-        echo "  2. Informar caminho de chave existente"
+
+        if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+            echo "  ${GREEN}1. Reutilizar chave de migração existente (RECOMENDADO)${NC}"
+            echo "  2. Criar nova chave SSH"
+            echo "  3. Informar caminho de chave diferente"
+        else
+            echo "  1. Criar nova chave SSH automaticamente (Recomendado)"
+            echo "  2. Informar caminho de chave existente"
+        fi
         echo ""
-        read -p "Escolha uma opção (1-2): " SSH_OPTION
+
+        if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+            read -p "Escolha uma opção (1-3): " SSH_OPTION
+        else
+            read -p "Escolha uma opção (1-2): " SSH_OPTION
+        fi
         SSH_OPTION=${SSH_OPTION:-1}
 
         if [ "$SSH_OPTION" = "1" ]; then
-            # Criar nova chave SSH
-            NEW_KEY_PATH="/root/.ssh/id_rsa_migration_$(date +%Y%m%d_%H%M%S)"
-            log_info "Gerando nova chave SSH em $NEW_KEY_PATH..."
+            if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+                # Reutilizar chave existente
+                NEW_KEY_PATH="$LATEST_KEY"
+                log_success "✅ Reutilizando chave SSH existente: $(basename $NEW_KEY_PATH)"
+                log_info "Isso evita acúmulo de chaves e mantém o sistema organizado"
+            else
+                # Criar nova chave SSH com nome fixo (sem timestamp)
+                NEW_KEY_PATH="/root/.ssh/id_rsa_migration"
+                log_info "Gerando nova chave SSH em $NEW_KEY_PATH..."
 
-            ssh-keygen -t ed25519 -f "$NEW_KEY_PATH" -N "" -C "vpsguardian-migration" >/dev/null 2>&1
-            if [ $? -ne 0 ]; then
-                log_error "Falha ao gerar chave SSH"
+                ssh-keygen -t ed25519 -f "$NEW_KEY_PATH" -N "" -C "vpsguardian-migration" >/dev/null 2>&1
+                if [ $? -ne 0 ]; then
+                    log_error "Falha ao gerar chave SSH"
+                    rm -rf "$TEMP_EXTRACT_DIR"
+                    exit 1
+                fi
+                log_success "Chave SSH gerada com sucesso!"
+            fi
+        elif [ "$SSH_OPTION" = "2" ]; then
+            if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+                # Criar nova chave mesmo havendo uma existente
+                BACKUP_DIR="/root/.ssh/migration-keys-backup"
+                mkdir -p "$BACKUP_DIR"
+
+                log_warning "Fazendo backup de chaves antigas..."
+                for old_key in "${MIGRATION_KEYS[@]}"; do
+                    cp "$old_key" "$BACKUP_DIR/" 2>/dev/null
+                    cp "${old_key}.pub" "$BACKUP_DIR/" 2>/dev/null
+                done
+                log_success "Backup salvo em: $BACKUP_DIR"
+
+                NEW_KEY_PATH="/root/.ssh/id_rsa_migration"
+                log_info "Gerando nova chave SSH em $NEW_KEY_PATH..."
+
+                ssh-keygen -t ed25519 -f "$NEW_KEY_PATH" -N "" -C "vpsguardian-migration" >/dev/null 2>&1
+                if [ $? -ne 0 ]; then
+                    log_error "Falha ao gerar chave SSH"
+                    rm -rf "$TEMP_EXTRACT_DIR"
+                    exit 1
+                fi
+                log_success "Chave SSH gerada com sucesso!"
+            else
+                # Modo original: informar caminho
+                read -p "Digite o caminho da chave SSH existente: " NEW_KEY_PATH
+                if [ ! -f "$NEW_KEY_PATH" ]; then
+                    log_error "Chave SSH não encontrada em: $NEW_KEY_PATH"
+                    rm -rf "$TEMP_EXTRACT_DIR"
+                    exit 1
+                fi
+            fi
+        elif [ "$SSH_OPTION" = "3" ] && [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+            # Informar caminho diferente
+            read -p "Digite o caminho da chave SSH existente: " NEW_KEY_PATH
+            if [ ! -f "$NEW_KEY_PATH" ]; then
+                log_error "Chave SSH não encontrada em: $NEW_KEY_PATH"
                 rm -rf "$TEMP_EXTRACT_DIR"
                 exit 1
             fi
-            log_success "Chave SSH gerada com sucesso!"
+        else
+            log_error "Opção inválida"
+            rm -rf "$TEMP_EXTRACT_DIR"
+            exit 1
+        fi
+
+        # Se for reutilizar, verificar se precisa recopiar para o servidor
+        if [ "$SSH_OPTION" = "1" ] && [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
+            echo ""
+            log_info "Testando se a chave já está configurada no servidor remoto..."
+
+            ssh -o BatchMode=yes -o ConnectTimeout=5 -i "$NEW_KEY_PATH" -p "$NEW_SERVER_PORT" \
+                "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
+
+            if [ $? -eq 0 ]; then
+                log_success "✅ Chave já está configurada! Pulando cópia."
+                SSH_COPY_SUCCESS=true
+                SSH_PRIVATE_KEY_PATH="$NEW_KEY_PATH"
+            else
+                log_warning "Chave não está configurada no servidor. Será necessário copiar."
+            fi
+        fi
+
+        # Apenas copiar chave se não for reutilização bem-sucedida
+        if [ "${SSH_COPY_SUCCESS:-false}" != "true" ]; then
 
             # Pedir senha do servidor remoto (com retry)
             echo ""
@@ -506,24 +613,15 @@ EOF
                     fi
                 fi
             fi
-
-        else
-            # Opção 2: Informar caminho existente
-            read -p "Caminho completo da chave SSH privada: " SSH_PRIVATE_KEY_PATH
-            if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-                log_error "Chave SSH não encontrada: $SSH_PRIVATE_KEY_PATH"
-                rm -rf "$TEMP_EXTRACT_DIR"
-                exit 1
-            fi
-        fi
-    else
-        # Modo automático sem chave SSH
-        log_error "Modo automático requer chave SSH pré-configurada"
-        log_info "Configure SSH_PRIVATE_KEY_PATH antes de executar em modo --auto"
-        rm -rf "$TEMP_EXTRACT_DIR"
-        exit 1
-    fi
-fi
+        fi  # Fim do if SSH_COPY_SUCCESS
+    fi  # Fim do if AUTO_MODE = false
+else
+    # Modo automático sem chave SSH
+    log_error "Modo automático requer chave SSH pré-configurada"
+    log_info "Configure SSH_PRIVATE_KEY_PATH antes de executar em modo --auto"
+    rm -rf "$TEMP_EXTRACT_DIR"
+    exit 1
+fi  # Fim do if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]
 
 log_info "Starting ssh-agent..."
 eval "$(ssh-agent -s)" >/dev/null
