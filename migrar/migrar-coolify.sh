@@ -226,21 +226,70 @@ if [ -z "$BACKUP_FILE" ]; then
         fi
     else
         # Modo interativo - listar backups
-        log_info "Available backups:"
-        echo ""
+        BACKUP_SELECTED=false
 
-        if ls "$BACKUP_DIR"/*.tar.gz 1> /dev/null 2>&1; then
-            BACKUPS=($(ls -t "$BACKUP_DIR"/*.tar.gz))
-            for i in "${!BACKUPS[@]}"; do
-                BACKUP_DATE=$(stat -c %y "${BACKUPS[$i]}" | cut -d'.' -f1)
-                BACKUP_SIZE=$(du -h "${BACKUPS[$i]}" | cut -f1)
-                echo "  [$i] $(basename ${BACKUPS[$i]}) - $BACKUP_DATE ($BACKUP_SIZE)"
-            done
+        while [ "$BACKUP_SELECTED" = false ]; do
+            log_info "Available backups:"
             echo ""
-            read -p "Select backup number (0-$((${#BACKUPS[@]}-1)), or press Enter for most recent): " BACKUP_INDEX
-            BACKUP_INDEX=${BACKUP_INDEX:-0}
-            BACKUP_FILE="${BACKUPS[$BACKUP_INDEX]}"
-        else
+
+            if ls "$BACKUP_DIR"/*.tar.gz 1> /dev/null 2>&1; then
+                BACKUPS=($(ls -t "$BACKUP_DIR"/*.tar.gz))
+                for i in "${!BACKUPS[@]}"; do
+                    BACKUP_DATE=$(stat -c %y "${BACKUPS[$i]}" | cut -d'.' -f1)
+                    BACKUP_SIZE=$(du -h "${BACKUPS[$i]}" | cut -f1)
+                    echo "  [$i] $(basename ${BACKUPS[$i]}) - $BACKUP_DATE ($BACKUP_SIZE)"
+                done
+                echo ""
+                echo "  Digite 'new' para criar um novo backup agora"
+                echo ""
+                read -p "Select backup number (0-$((${#BACKUPS[@]}-1)), 'new', or press Enter for most recent): " BACKUP_INDEX
+
+                # Se usuário digitou 'new', criar novo backup
+                if [[ "$BACKUP_INDEX" == "new" ]] || [[ "$BACKUP_INDEX" == "NEW" ]]; then
+                    echo ""
+                    log_info "Criando novo backup do Coolify..."
+                    echo ""
+
+                    # Determinar caminho do script de backup
+                    BACKUP_SCRIPT="$SCRIPT_DIR/../backup/backup-coolify.sh"
+                    if [ ! -f "$BACKUP_SCRIPT" ]; then
+                        log_error "Script de backup não encontrado: $BACKUP_SCRIPT"
+                        exit 1
+                    fi
+
+                    # Executar backup
+                    if bash "$BACKUP_SCRIPT"; then
+                        log_success "Backup criado com sucesso!"
+                        echo ""
+                        log_info "Recarregando lista de backups..."
+                        echo ""
+                        # Loop vai continuar e mostrar a lista atualizada
+                        continue
+                    else
+                        log_error "Falha ao criar backup"
+                        exit 1
+                    fi
+                fi
+
+                # Seleção normal de backup
+                BACKUP_INDEX=${BACKUP_INDEX:-0}
+
+                # Validar índice
+                if [[ "$BACKUP_INDEX" =~ ^[0-9]+$ ]] && [ "$BACKUP_INDEX" -ge 0 ] && [ "$BACKUP_INDEX" -lt ${#BACKUPS[@]} ]; then
+                    BACKUP_FILE="${BACKUPS[$BACKUP_INDEX]}"
+                    BACKUP_SELECTED=true
+                else
+                    log_error "Índice inválido: $BACKUP_INDEX"
+                    echo ""
+                fi
+            else
+                # Nenhum backup encontrado - sair do loop
+                break
+            fi
+        done
+
+        # Se ainda não tem backup selecionado, significa que não há backups
+        if [ "$BACKUP_SELECTED" = false ]; then
             log_warning "No backups found in $BACKUP_DIR"
             echo ""
             echo "Você precisa de um backup do Coolify antes de migrar."
