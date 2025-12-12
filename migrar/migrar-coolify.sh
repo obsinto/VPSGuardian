@@ -1038,119 +1038,78 @@ else
     log_warning "Database restore may have encountered issues. Check $DB_RESTORE_LOG"
 fi
 
-### ========== UPDATE APP_KEY (CRÍTICO - ANTES DO FINAL INSTALL) ==========
-log_section "Update APP_KEY"
-log_info "⚠️ CRÍTICO: Configurando APP_KEY do backup..."
+### ========== UPDATE APP_KEYS (ROTATION LOGIC) ==========
+log_section "Update APP_KEYS (Rotation)"
+log_info "⚠️ Preparando rotação de chaves de criptografia..."
 
-# Obter APP_KEY CORRETAMENTE - com múltiplos métodos de fallback
-APP_KEY=""
-# Método 1: Do backup extraído
+# Variáveis para armazenar as chaves encontradas
+BACKUP_APP_KEY=""
+BACKUP_PREV_KEYS=""
+
+# 1. Tentar ler do arquivo .env extraído
 if [ -f "$TEMP_EXTRACT_DIR/.env" ]; then
-    APP_KEY=$(grep "^APP_KEY=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
-    log_success "APP_KEY obtido do backup extraído"
+    BACKUP_APP_KEY=$(grep "^APP_KEY=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
+    BACKUP_PREV_KEYS=$(grep "^APP_PREVIOUS_KEYS=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
 fi
 
-# Método 2: Do sistema atual (se backup não tiver)
-if [ -z "$APP_KEY" ] && [ -f "$ENV_FILE" ]; then
-    APP_KEY=$(grep "^APP_KEY=" "$ENV_FILE" | cut -d '=' -f2-)
-    log_success "APP_KEY obtido do sistema atual"
+# 2. Fallback: Tentar ler direto do tar.gz se a extração falhou
+if [ -z "$BACKUP_APP_KEY" ]; then
+    BACKUP_APP_KEY=$(tar -xzf "$BACKUP_FILE" -O ".env" 2>/dev/null | grep "^APP_KEY=" | cut -d '=' -f2-)
+    BACKUP_PREV_KEYS=$(tar -xzf "$BACKUP_FILE" -O ".env" 2>/dev/null | grep "^APP_PREVIOUS_KEYS=" | cut -d '=' -f2-)
 fi
 
-# Método 3: Do arquivo .env no backup completo
-if [ -z "$APP_KEY" ]; then
-    # Extrair apenas o .env do backup
-    tar -xzf "$BACKUP_FILE" -O ".env" 2>/dev/null | grep "^APP_KEY=" | cut -d '=' -f2- > /tmp/app_key.txt
-    APP_KEY=$(cat /tmp/app_key.txt 2>/dev/null)
-    rm -f /tmp/app_key.txt
-    if [ -n "$APP_KEY" ]; then
-        log_success "APP_KEY extraído diretamente do backup"
-    fi
-fi
-
-# Validar APP_KEY
-if [ -z "$APP_KEY" ]; then
-    log_error "❌ NÃO FOI POSSÍVEL OBTER O APP_KEY!"
-    log_error "Isso é CRÍTICO para a migração."
-    log_error "Dados criptografados NÃO serão acessíveis."
-    echo ""
-    read -p "Continuar mesmo sem APP_KEY? (s/N): " CONTINUE_WO_KEY
-    if [[ ! "$CONTINUE_WO_KEY" =~ ^[Ss]$ ]]; then
+# 3. Validação Crítica
+if [ -z "$BACKUP_APP_KEY" ]; then
+    log_error "❌ ERRO CRÍTICO: Não foi possível encontrar a APP_KEY no backup."
+    log_error "Sem ela, os dados do banco não poderão ser descriptografados."
+    read -p "Deseja ABORTAR a migração? (S/n): " ABORT
+    ABORT=${ABORT:-S}
+    if [[ "$ABORT" =~ ^[Ss]$ ]]; then
         rm -rf "$TEMP_EXTRACT_DIR"
         cleanup_and_exit 1
     fi
-    log_warning "Continuando SEM APP_KEY - aplicações podem não funcionar"
 else
-    log_success "✅ APP_KEY obtido com sucesso"
-    log_info " Comprimento: ${#APP_KEY} caracteres"
-    log_info " Primeiros 10 chars: ${APP_KEY:0:10}..."
+    log_success "✅ APP_KEY antiga encontrada."
 fi
 
-echo ""
-log_info "O APP_KEY é usado para criptografar:"
-log_info " • Senhas de servidores"
-log_info " • Tokens de API (GitHub, GitLab, etc.)"
-log_info " • Chaves privadas de deploy"
-log_info " • Credenciais de banco de dados"
-echo ""
+# 4. Construir a String Final de Chaves Anteriores (A SOMA)
+# A lógica é: Nova_Previous = (APP_KEY_Antiga) + "," + (APP_PREVIOUS_KEYS_Antiga)
 
-# PARAR TODOS OS CONTAINERS DO COOLIFY antes de modificar .env
-log_info "Parando todos containers do Coolify..."
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "docker stop \$(docker ps --filter name=coolify --format '{{.Names}}') 2>/dev/null || true"
+KEYS_TO_MIGRATE="$BACKUP_APP_KEY"
 
-# AGORA CONFIGURAR O APP_KEY - EXATAMENTE como no script menor
-if [ -n "$APP_KEY" ]; then
-    log_info "Configurando APP_KEY no servidor remoto..."
+if [ -n "$BACKUP_PREV_KEYS" ]; then
+    log_info "ℹ️ Histórico de chaves anteriores detectado."
+    # Adiciona as chaves antigas à lista, separadas por vírgula
+    KEYS_TO_MIGRATE="${KEYS_TO_MIGRATE},${BACKUP_PREV_KEYS}"
+fi
+
+log_info "🔑 String de chaves para migração preparada."
+# Remover espaços em branco que possam ter vindo junto
+KEYS_TO_MIGRATE=$(echo "$KEYS_TO_MIGRATE" | tr -d ' ')
+
+# 5. Aplicar no Novo Servidor
+log_info "Parando containers para aplicação segura..."
+ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "docker stop \$(docker ps -q) 2>/dev/null || true"
+
+log_info "Injetando chaves no servidor novo..."
+
+# Usamos um script remoto para inserir a linha APP_PREVIOUS_KEYS corretamente
+ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "bash -s" << EOF
+    mkdir -p /data/coolify/source
+    ENV_FILE="/data/coolify/source/.env"
+    touch "\$ENV_FILE"
+
+    # Se a linha já existe, removemos para evitar duplicidade e escrevemos a nova
+    sed -i '/^APP_PREVIOUS_KEYS=/d' "\$ENV_FILE"
     
-    # Método 1: Usar sed para substituir/adicionar (mais robusto)
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "
-        # Garantir que .env existe
-        mkdir -p /data/coolify/source
-        touch /data/coolify/source/.env
-        
-        # Remover linhas existentes de APP_PREVIOUS_KEYS
-        sed -i '/^APP_PREVIOUS_KEYS=/d' /data/coolify/source/.env 2>/dev/null || true
-        
-        # Adicionar nova linha
-        echo 'APP_PREVIOUS_KEYS=$APP_KEY' >> /data/coolify/source/.env
-        
-        # Verificar se foi adicionado
-        echo '=== CONTEÚDO DO .env (APP_PREVIOUS_KEYS) ==='
-        grep '^APP_PREVIOUS_KEYS=' /data/coolify/source/.env || echo 'NÃO ENCONTRADO!'
-        echo '==========================================='
-    "
+    # Adiciona a linha completa com todas as chaves (Atual + Antigas)
+    echo "APP_PREVIOUS_KEYS=$KEYS_TO_MIGRATE" >> "\$ENV_FILE"
     
-    # Verificar se foi configurado corretamente
-    sleep 2
-    APPLIED_KEY=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "grep '^APP_PREVIOUS_KEYS=' /data/coolify/source/.env 2>/dev/null | cut -d'=' -f2- | tr -d '\n'")
-    
-    if [ -n "$APPLIED_KEY" ]; then
-        log_success "✅ APP_KEY configurado com sucesso no servidor remoto!"
-        log_info " Comprimento no remoto: ${#APPLIED_KEY} chars"
-        
-        # Comparar se são iguais (aprimeiros chars)
-        if [ "${APP_KEY:0:20}" = "${APPLIED_KEY:0:20}" ]; then
-            log_success "✅ APP_KEY verificado (primeiros 20 chars coincidem)"
-        else
-            log_warning "⚠️ APP_KEY pode não corresponder exatamente"
-            log_info " Local: ${APP_KEY:0:20}..."
-            log_info " Remoto: ${APPLIED_KEY:0:20}..."
-        fi
-    else
-        log_error "❌ APP_KEY NÃO encontrado após configuração!"
-        log_info "Tentando método alternativo..."
-        
-        # Método alternativo: Criar .env do zero
-        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "
-            cat > /data/coolify/source/.env << EOF
-APP_PREVIOUS_KEYS=$APP_KEY
-# Adicionado pela migração VPS Guardian
+    # Limpeza final
+    sed -i '/^$/d' "\$ENV_FILE"
 EOF
-        "
-        log_info "✅ .env criado com APP_KEY"
-    fi
-fi
+
+check_success $? "Chaves de criptografia migradas com sucesso."
 
 echo ""
 
