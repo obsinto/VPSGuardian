@@ -99,6 +99,97 @@ cleanup_and_exit() {
 
 trap cleanup_and_exit SIGINT SIGTERM
 
+### ========== FUNÇÕES DE GESTÃO DE LOTES ==========
+
+# Detectar lotes de backup disponíveis
+detect_backup_batches() {
+    local backup_dir="$1"
+
+    # Encontrar todos os arquivos .batch-*.meta
+    local batch_files=($(ls -t "$backup_dir"/.batch-*.meta 2>/dev/null))
+
+    if [ ${#batch_files[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    # Array associativo para armazenar informações dos lotes
+    declare -g -A BATCH_INFO
+    declare -g BATCH_IDS=()
+
+    for meta_file in "${batch_files[@]}"; do
+        if [ -f "$meta_file" ]; then
+            source "$meta_file"
+            BATCH_IDS+=("$BATCH_ID")
+            BATCH_INFO[$BATCH_ID]="$CREATED|$TOTAL_VOLUMES|$SUCCESSFUL_BACKUPS"
+        fi
+    done
+
+    return 0
+}
+
+# Listar lotes disponíveis
+list_backup_batches() {
+    local backup_dir="$1"
+
+    echo ""
+    log_info "Lotes de backup disponíveis:"
+    echo ""
+
+    for i in "${!BATCH_IDS[@]}"; do
+        local batch_id="${BATCH_IDS[$i]}"
+        local info="${BATCH_INFO[$batch_id]}"
+
+        IFS='|' read -r created total success <<< "$info"
+
+        echo "  [$i] Lote: $batch_id"
+        echo "      Criado em: $created"
+        echo "      Volumes no lote: $success/$total"
+
+        # Contar backups deste lote
+        local batch_count=$(ls -1 "$backup_dir"/*-backup-${batch_id}.tar.gz 2>/dev/null | wc -l)
+        echo "      Backups encontrados: $batch_count"
+        echo ""
+    done
+}
+
+# Obter backups de um lote específico
+get_batch_backups() {
+    local backup_dir="$1"
+    local batch_id="$2"
+
+    # Listar apenas backups deste lote
+    ls -t "$backup_dir"/*-backup-${batch_id}.tar.gz 2>/dev/null
+}
+
+# Normalizar seleção de usuário (aceitar vírgulas, espaços, intervalos)
+normalize_selection() {
+    local input="$1"
+    local result=""
+
+    # Substituir vírgulas por espaços
+    input="${input//,/ }"
+
+    # Processar cada token
+    for token in $input; do
+        # Verificar se é um intervalo (ex: 0-5)
+        if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            local start="${BASH_REMATCH[1]}"
+            local end="${BASH_REMATCH[2]}"
+
+            # Adicionar todos os números do intervalo
+            for ((i=start; i<=end; i++)); do
+                result="$result $i"
+            done
+        elif [[ "$token" =~ ^[0-9]+$ ]]; then
+            # Número simples
+            result="$result $token"
+        fi
+    done
+
+    # Remover espaços duplicados e trim
+    echo "$result" | xargs
+}
+
 # Função auxiliar para executar comandos SSH (suporta key e password)
 ssh_exec() {
     if [ "$SSH_AUTH_METHOD" = "password" ]; then
@@ -213,20 +304,76 @@ echo ""
 log_success "Fresh backups created successfully!"
 echo ""
 
-# Validar contagem de backups criados (ignorar symlinks -latest)
-BACKUP_FILES_COUNT=$(ls -1 "$LOCAL_BACKUP_DIR"/*-backup-*.tar.gz 2>/dev/null | grep -v "\-latest\.tar\.gz$" | wc -l)
+### ========== DETECÇÃO E SELEÇÃO DE LOTES ==========
+log_section "BATCH SELECTION"
+
+# Detectar lotes disponíveis
+if ! detect_backup_batches "$LOCAL_BACKUP_DIR"; then
+    log_error "No batch metadata found. Cannot determine backup batches."
+    echo ""
+    echo "  This might happen if:"
+    echo "    - Backups were created with an older version of the script"
+    echo "    - Batch metadata files were deleted"
+    echo ""
+    read -p "  Continue with ALL backups found? (yes/no): " CONTINUE_OLD
+    if [ "$CONTINUE_OLD" != "yes" ]; then
+        log_info "Migration aborted by user."
+        exit 1
+    fi
+
+    # Modo legacy: sem lotes
+    SELECTED_BATCH_ID=""
+    BACKUPS=($(ls -t "$LOCAL_BACKUP_DIR"/*-backup-*.tar.gz 2>/dev/null | grep -v "\-latest\.tar\.gz$"))
+else
+    # Listar lotes disponíveis
+    list_backup_batches "$LOCAL_BACKUP_DIR"
+
+    # Se houver apenas um lote, usar automaticamente
+    if [ ${#BATCH_IDS[@]} -eq 1 ]; then
+        SELECTED_BATCH_ID="${BATCH_IDS[0]}"
+        log_success "Usando automaticamente o único lote disponível: $SELECTED_BATCH_ID"
+    else
+        # Perguntar qual lote usar
+        echo ""
+        echo "$LOG_PREFIX [ INPUT ] Escolha o lote de backup:"
+        echo "  - Digite o número do lote [0-$((${#BATCH_IDS[@]}-1))]"
+        echo "  - Digite 'latest' para usar o mais recente (default)"
+        read -p "$LOG_PREFIX [ INPUT ] Lote: " BATCH_SELECTION
+
+        if [ -z "$BATCH_SELECTION" ] || [ "$BATCH_SELECTION" = "latest" ]; then
+            SELECTED_BATCH_ID="${BATCH_IDS[0]}"  # Primeiro da lista (mais recente)
+            log_success "Usando lote mais recente: $SELECTED_BATCH_ID"
+        elif [[ "$BATCH_SELECTION" =~ ^[0-9]+$ ]] && [ "$BATCH_SELECTION" -lt "${#BATCH_IDS[@]}" ]; then
+            SELECTED_BATCH_ID="${BATCH_IDS[$BATCH_SELECTION]}"
+            log_success "Usando lote selecionado: $SELECTED_BATCH_ID"
+        else
+            log_error "Seleção inválida."
+            exit 1
+        fi
+    fi
+
+    # Obter backups do lote selecionado
+    BACKUPS=($(get_batch_backups "$LOCAL_BACKUP_DIR" "$SELECTED_BATCH_ID"))
+fi
+
+# Validar contagem de backups do lote selecionado
+BACKUP_FILES_COUNT=${#BACKUPS[@]}
 
 log_section "BACKUP VALIDATION"
+if [ -n "$SELECTED_BATCH_ID" ]; then
+    echo "  Lote selecionado: $SELECTED_BATCH_ID"
+fi
 echo "  Docker volumes in origin: $DOCKER_VOLUMES_COUNT"
-echo "  Backup files created: $BACKUP_FILES_COUNT"
+echo "  Backup files in selected batch: $BACKUP_FILES_COUNT"
 echo ""
 
 if [ $BACKUP_FILES_COUNT -ne $DOCKER_VOLUMES_COUNT ]; then
-    log_error "Mismatch detected!"
-    log_error "Expected $DOCKER_VOLUMES_COUNT backups, but found $BACKUP_FILES_COUNT"
+    log_warning "Volume count mismatch!"
+    log_warning "Expected $DOCKER_VOLUMES_COUNT backups, but found $BACKUP_FILES_COUNT in this batch"
     echo ""
     echo "  This could mean:"
     echo "    - Some volumes failed to backup"
+    echo "    - You selected a batch from a different server/time"
     echo "    - Permission issues accessing volumes"
     echo ""
     read -p "  Continue anyway? (yes/no): " CONTINUE_ANYWAY
@@ -235,15 +382,12 @@ if [ $BACKUP_FILES_COUNT -ne $DOCKER_VOLUMES_COUNT ]; then
         exit 1
     fi
 else
-    log_success "Validation passed! All volumes backed up successfully."
+    log_success "Validation passed! Batch contains expected number of backups."
 fi
 
 echo ""
-log_info "Available volume backups:"
+log_info "Available volume backups in selected batch:"
 echo ""
-
-# Listar apenas backups reais (sem symlinks -latest)
-BACKUPS=($(ls -t "$LOCAL_BACKUP_DIR"/*-backup-*.tar.gz 2>/dev/null | grep -v "\-latest\.tar\.gz$"))
 
 if [ ${#BACKUPS[@]} -eq 0 ]; then
     log_error "No backup files found after check"
@@ -268,9 +412,18 @@ done
 
 # Permitir seleção múltipla
 echo "$LOG_PREFIX [ INPUT ] Select volumes to migrate:"
-echo "  - Enter numbers separated by spaces (e.g., 0 2 4)"
+echo "  - Enter numbers: separated by spaces (e.g., 0 2 4)"
+echo "  - Enter numbers: separated by commas (e.g., 0,2,4)"
+echo "  - Enter ranges: using dash (e.g., 0-5 10-15)"
 echo "  - Enter 'all' to migrate all volumes"
 echo "  - Enter 'none' to cancel"
+echo ""
+echo "  Examples:"
+echo "    0 1 2 3         → volumes 0, 1, 2, 3"
+echo "    0,1,2,3         → volumes 0, 1, 2, 3"
+echo "    0-3             → volumes 0, 1, 2, 3"
+echo "    0-3,5,7-9       → volumes 0, 1, 2, 3, 5, 7, 8, 9"
+echo ""
 read -p "$LOG_PREFIX [ INPUT ] Selection: " SELECTION
 
 if [ "$SELECTION" = "none" ]; then
@@ -281,17 +434,31 @@ fi
 if [ "$SELECTION" = "all" ]; then
     SELECTED_INDICES=$(seq 0 $((${#BACKUPS[@]}-1)))
 else
-    SELECTED_INDICES=$SELECTION
+    # Normalizar seleção (aceitar vírgulas, espaços, intervalos)
+    SELECTED_INDICES=$(normalize_selection "$SELECTION")
+
+    if [ -z "$SELECTED_INDICES" ]; then
+        log_error "Invalid selection format."
+        exit 1
+    fi
 fi
 
 # Processar seleção
 SELECTED_BACKUPS=()
 for idx in $SELECTED_INDICES; do
+    # Validar que é um número inteiro
+    if [[ ! "$idx" =~ ^[0-9]+$ ]]; then
+        log_warning "Skipping invalid index: $idx"
+        continue
+    fi
+
     if [ $idx -ge 0 ] && [ $idx -lt ${#BACKUPS[@]} ]; then
         SELECTED_BACKUPS+=("${BACKUPS[$idx]}")
         # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
         VOLUME_NAME=$(basename "${BACKUPS[$idx]}" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
         VOLUMES_TO_MIGRATE+=("$VOLUME_NAME")
+    else
+        log_warning "Index $idx is out of range (0-$((${#BACKUPS[@]}-1)))"
     fi
 done
 
