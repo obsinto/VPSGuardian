@@ -352,7 +352,7 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
     echo ""
 
     # Procurar por chaves de migração anteriores
-    MIGRATION_KEYS=($(ls -t /root/.ssh/id_rsa_migration* 2>/dev/null | grep -v "\.pub$" | head -5))
+    MIGRATION_KEYS=($(ls -t /root/.ssh/id_ed25519_migration* 2>/dev/null | grep -v "\.pub$" | head -5))
 
     if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
         echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
@@ -402,7 +402,7 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
                 log_info "Isso evita acúmulo de chaves e mantém o sistema organizado"
             else
                 # Criar nova chave SSH com nome fixo (sem timestamp)
-                NEW_KEY_PATH="/root/.ssh/id_rsa_migration"
+                NEW_KEY_PATH="/root/.ssh/id_ed25519_migration"
                 log_info "Gerando nova chave SSH em $NEW_KEY_PATH..."
 
                 ssh-keygen -t ed25519 -f "$NEW_KEY_PATH" -N "" -C "vpsguardian-migration" >/dev/null 2>&1
@@ -426,7 +426,7 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
                 done
                 log_success "Backup salvo em: $BACKUP_DIR"
 
-                NEW_KEY_PATH="/root/.ssh/id_rsa_migration"
+                NEW_KEY_PATH="/root/.ssh/id_ed25519_migration"
                 log_info "Gerando nova chave SSH em $NEW_KEY_PATH..."
 
                 ssh-keygen -t ed25519 -f "$NEW_KEY_PATH" -N "" -C "vpsguardian-migration" >/dev/null 2>&1

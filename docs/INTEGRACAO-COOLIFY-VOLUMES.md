@@ -124,7 +124,7 @@ O `migrar-coolify.sh` exporta as seguintes variáveis para o `migrar-volumes.sh`
 | `NEW_SERVER_IP` | IP do servidor de destino | `195.200.0.200` |
 | `NEW_SERVER_USER` | Usuário SSH | `root` |
 | `NEW_SERVER_PORT` | Porta SSH | `22` |
-| `SSH_PRIVATE_KEY_PATH` | Caminho da chave SSH | `/root/.ssh/id_rsa_migration_*` |
+| `SSH_PRIVATE_KEY_PATH` | Caminho da chave SSH | `/root/.ssh/id_ed25519_migration_*` |
 | `CONTROL_SOCKET` | Socket da conexão SSH persistente | `/tmp/ssh_mux_*` |
 | `SSH_AUTH_METHOD` | Método de autenticação | `key` |
 | `COOLIFY_MIGRATION` | Flag indicando origem | `true` |
