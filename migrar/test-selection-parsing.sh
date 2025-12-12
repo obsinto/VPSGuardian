@@ -58,37 +58,37 @@ test_case() {
 
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  TESTANDO PARSING DE SELEÇÃO${NC}"
+echo -e "${BLUE}  TESTANDO PARSING DE SELEÇÃO (1-based)${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
 passed=0
 failed=0
 
-# Testes com espaços
-if test_case "0 1 2 3" "0 1 2 3"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
-if test_case "0 2 4 6" "0 2 4 6"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+# Testes com espaços (1-based para usuário)
+if test_case "1 2 3 4" "1 2 3 4"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1 3 5 7" "1 3 5 7"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 
 # Testes com vírgulas
-if test_case "0,1,2,3" "0 1 2 3"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
-if test_case "0,2,4,6" "0 2 4 6"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1,2,3,4" "1 2 3 4"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1,3,5,7" "1 3 5 7"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 
 # Testes com intervalos
-if test_case "0-3" "0 1 2 3"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1-4" "1 2 3 4"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 if test_case "5-8" "5 6 7 8"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
-if test_case "0-2" "0 1 2"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1-3" "1 2 3"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 
 # Testes mistos
-if test_case "0-3,5,7-9" "0 1 2 3 5 7 8 9"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
-if test_case "0,2-4,6" "0 2 3 4 6"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
-if test_case "0-2 5 8-10" "0 1 2 5 8 9 10"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1-4,6,8-10" "1 2 3 4 6 8 9 10"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1,3-5,7" "1 3 4 5 7"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1-3 6 9-11" "1 2 3 6 9 10 11"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 
 # Testes com espaços e vírgulas mistos
-if test_case "0,1,2, 3, 4" "0 1 2 3 4"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
-if test_case "0-2, 5-7, 10" "0 1 2 5 6 7 10"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1,2,3, 4, 5" "1 2 3 4 5"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+if test_case "1-3, 6-8, 11" "1 2 3 6 7 8 11"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 
-# Caso original do usuário
-if test_case "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21" "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
+# Caso original do usuário (convertido para 1-based)
+if test_case "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22" "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22"; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"

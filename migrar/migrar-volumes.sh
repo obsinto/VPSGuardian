@@ -403,7 +403,8 @@ for i in "${!BACKUPS[@]}"; do
     # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
     VOLUME_NAME=$(basename "$BACKUP_FILE" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
 
-    echo "  [$i] $(basename $BACKUP_FILE)"
+    # Mostrar numeração começando de 1 (mais natural para usuário)
+    echo "  [$((i+1))] $(basename $BACKUP_FILE)"
     echo "      Volume: $VOLUME_NAME"
     echo "      Date: $BACKUP_DATE"
     echo "      Size: $BACKUP_SIZE"
@@ -411,36 +412,45 @@ for i in "${!BACKUPS[@]}"; do
 done
 
 # Permitir seleção múltipla
-echo "$LOG_PREFIX [ INPUT ] Select volumes to migrate:"
-echo "  - Enter numbers: separated by spaces (e.g., 0 2 4)"
-echo "  - Enter numbers: separated by commas (e.g., 0,2,4)"
-echo "  - Enter ranges: using dash (e.g., 0-5 10-15)"
-echo "  - Enter 'all' to migrate all volumes"
-echo "  - Enter 'none' to cancel"
+echo "$LOG_PREFIX [ INPUT ] Selecione os volumes para migrar:"
+echo "  - Digite números separados por espaços (ex: 1 2 4)"
+echo "  - Digite números separados por vírgulas (ex: 1,2,4)"
+echo "  - Digite intervalos usando hífen (ex: 1-5 10-15)"
+echo "  - Digite 'all' para migrar todos os volumes"
+echo "  - Digite 'none' para cancelar"
 echo ""
-echo "  Examples:"
-echo "    0 1 2 3         → volumes 0, 1, 2, 3"
-echo "    0,1,2,3         → volumes 0, 1, 2, 3"
-echo "    0-3             → volumes 0, 1, 2, 3"
-echo "    0-3,5,7-9       → volumes 0, 1, 2, 3, 5, 7, 8, 9"
+echo "  Exemplos:"
+echo "    1 2 3 4         → volumes 1, 2, 3, 4"
+echo "    1,2,3,4         → volumes 1, 2, 3, 4"
+echo "    1-4             → volumes 1, 2, 3, 4"
+echo "    1-4,6,8-10      → volumes 1, 2, 3, 4, 6, 8, 9, 10"
 echo ""
-read -p "$LOG_PREFIX [ INPUT ] Selection: " SELECTION
+read -p "$LOG_PREFIX [ INPUT ] Seleção: " SELECTION
 
 if [ "$SELECTION" = "none" ]; then
-    log_info "Migration cancelled by user."
+    log_info "Migração cancelada pelo usuário."
     exit 0
 fi
 
 if [ "$SELECTION" = "all" ]; then
+    # Gerar sequência de 1 até N, depois converter para 0-based internamente
     SELECTED_INDICES=$(seq 0 $((${#BACKUPS[@]}-1)))
 else
     # Normalizar seleção (aceitar vírgulas, espaços, intervalos)
-    SELECTED_INDICES=$(normalize_selection "$SELECTION")
+    # Converter de 1-based (usuário) para 0-based (array)
+    SELECTED_INDICES_1BASED=$(normalize_selection "$SELECTION")
 
-    if [ -z "$SELECTED_INDICES" ]; then
-        log_error "Invalid selection format."
+    if [ -z "$SELECTED_INDICES_1BASED" ]; then
+        log_error "Formato de seleção inválido."
         exit 1
     fi
+
+    # Converter para 0-based (subtrair 1 de cada índice)
+    SELECTED_INDICES=""
+    for idx in $SELECTED_INDICES_1BASED; do
+        SELECTED_INDICES="$SELECTED_INDICES $((idx - 1))"
+    done
+    SELECTED_INDICES=$(echo "$SELECTED_INDICES" | xargs)
 fi
 
 # Processar seleção
@@ -448,7 +458,7 @@ SELECTED_BACKUPS=()
 for idx in $SELECTED_INDICES; do
     # Validar que é um número inteiro
     if [[ ! "$idx" =~ ^[0-9]+$ ]]; then
-        log_warning "Skipping invalid index: $idx"
+        log_warning "Ignorando índice inválido: $((idx+1))"
         continue
     fi
 
@@ -458,7 +468,7 @@ for idx in $SELECTED_INDICES; do
         VOLUME_NAME=$(basename "${BACKUPS[$idx]}" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
         VOLUMES_TO_MIGRATE+=("$VOLUME_NAME")
     else
-        log_warning "Index $idx is out of range (0-$((${#BACKUPS[@]}-1)))"
+        log_warning "Índice $((idx+1)) está fora do intervalo (1-${#BACKUPS[@]})"
     fi
 done
 
