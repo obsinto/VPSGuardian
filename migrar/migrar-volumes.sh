@@ -417,15 +417,16 @@ for i in "${!BACKUPS[@]}"; do
     BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
     VOLUME_NAME=$(basename "$BACKUP_FILE" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
-    
-if [[ "$VOLUME_NAME" == "coolify-db" ]] || \
-	       [[ "$VOLUME_NAME" == "coolify-redis" ]] || \
-	       [[ "$VOLUME_NAME" == "coolify-data" ]] || \
-	       [[ "$VOLUME_NAME" == "coolify_db_data" ]]; then
-		# Pula silenciosamente este volume para não oferecer risco
-		continue 
-	    fi
-	    
+
+    # Filtrar volumes do sistema Coolify (já migrados via dump SQL)
+    if [[ "$VOLUME_NAME" == "coolify-db" ]] || \
+       [[ "$VOLUME_NAME" == "coolify-redis" ]] || \
+       [[ "$VOLUME_NAME" == "coolify-data" ]] || \
+       [[ "$VOLUME_NAME" == "coolify_db_data" ]]; then
+        # Pula silenciosamente este volume para não oferecer risco de corrupção
+        continue
+    fi
+
     # Mostrar numeração começando de 1 (mais natural para usuário)
     echo "  [$((i+1))] $(basename $BACKUP_FILE)"
     echo "      Volume: $VOLUME_NAME"
@@ -677,28 +678,99 @@ if [ "$SSH_REUSED" = false ]; then
         if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
             log_warning "Chave SSH não encontrada em: $SSH_PRIVATE_KEY_PATH"
             echo ""
-            read -p "$LOG_PREFIX [ INPUT ] Digite o caminho da chave SSH privada: " SSH_PRIVATE_KEY_PATH
+            read -p "$LOG_PREFIX [ INPUT ] Digite o caminho da chave SSH privada (ou pressione Enter para usar senha): " SSH_PRIVATE_KEY_PATH
 
-            if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-                log_error "Chave SSH não encontrada. Abortando."
-                exit 1
+            if [ -z "$SSH_PRIVATE_KEY_PATH" ] || [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
+                if [ -n "$SSH_PRIVATE_KEY_PATH" ]; then
+                    log_warning "Chave SSH não encontrada em: $SSH_PRIVATE_KEY_PATH"
+                fi
+
+                echo ""
+                log_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                log_warning "🔄 FALLBACK AUTOMÁTICO: Mudando para autenticação por senha"
+                log_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                log_info "Como a chave SSH não está disponível, vamos usar senha."
+                log_warning "⚠️  ATENÇÃO: Autenticação por senha é menos segura que chave SSH"
+                echo ""
+
+                # Mudar para método password
+                SSH_AUTH_METHOD="password"
+
+                # Verificar se sshpass está instalado
+                if ! command -v sshpass &> /dev/null; then
+                    echo ""
+                    log_error "O pacote 'sshpass' não está instalado."
+                    log_error "Autenticação por senha requer o sshpass."
+                    echo ""
+                    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                    echo "  Para instalar o sshpass:"
+                    echo ""
+                    echo "    Ubuntu/Debian:  sudo apt-get install -y sshpass"
+                    echo "    CentOS/RHEL:    sudo yum install -y sshpass"
+                    echo "    Alpine:         apk add sshpass"
+                    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                    echo ""
+                    read -p "  Deseja instalar o sshpass agora? (yes/no): " INSTALL_SSHPASS
+
+                    if [ "$INSTALL_SSHPASS" = "yes" ]; then
+                        log_info "Instalando sshpass..."
+                        if command -v apt-get &> /dev/null; then
+                            apt-get update -qq && apt-get install -y sshpass >/dev/null 2>&1
+                        elif command -v yum &> /dev/null; then
+                            yum install -y sshpass >/dev/null 2>&1
+                        elif command -v apk &> /dev/null; then
+                            apk add sshpass >/dev/null 2>&1
+                        else
+                            log_error "Não foi possível instalar automaticamente."
+                            log_error "Por favor, instale o sshpass manualmente."
+                            exit 1
+                        fi
+                        check_success $? "sshpass instalado com sucesso."
+                    else
+                        log_error "Não é possível continuar sem o sshpass. Abortando."
+                        exit 1
+                    fi
+                fi
+
+                # Solicitar senha
+                echo ""
+                echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+                echo -e "${YELLOW}  CONFIGURAÇÃO DE SENHA SSH${NC}"
+                echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+                echo ""
+                echo "  Servidor: $NEW_SERVER_USER@$NEW_SERVER_IP"
+                echo "  Porta:    $NEW_SERVER_PORT"
+                echo ""
+                read -sp "  Digite a senha SSH: " SSH_PASSWORD
+                echo ""
+
+                if [ -z "$SSH_PASSWORD" ]; then
+                    log_error "A senha não pode estar vazia."
+                    exit 1
+                fi
+
+                log_success "Senha configurada com sucesso."
             fi
         fi
 
-        log_info "Iniciando ssh-agent..."
-        eval "$(ssh-agent -s)" >/dev/null
-        ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
-        check_success $? "Chave SSH adicionada ao agente."
+        # Se após verificações ainda está usando chave SSH, prosseguir com setup
+        if [ "$SSH_AUTH_METHOD" = "key" ]; then
+            log_info "Iniciando ssh-agent..."
+            eval "$(ssh-agent -s)" >/dev/null
+            ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
+            check_success $? "Chave SSH adicionada ao agente."
 
-        log_info "Testando conexão SSH..."
-        ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
-            "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
-        check_success $? "Conexão SSH estabelecida com sucesso."
+            log_info "Testando conexão SSH..."
+            ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
+                "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
+            check_success $? "Conexão SSH estabelecida com sucesso."
 
-        log_info "Estabelecendo conexão SSH persistente..."
-        ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
-            "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
-        check_success $? "Conexão SSH persistente estabelecida."
+            log_info "Estabelecendo conexão SSH persistente..."
+            ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
+                "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
+            check_success $? "Conexão SSH persistente estabelecida."
+        fi
 
     elif [ "$SSH_AUTH_METHOD" = "password" ]; then
         # ========== AUTENTICAÇÃO POR SENHA ==========
