@@ -130,89 +130,87 @@ if [ -z "$NEW_SERVER_PORT" ] || [ "$NEW_SERVER_PORT" = "22" ]; then
 fi
 log_info "SSH port: $NEW_SERVER_PORT"
 
-# Listar backups de volumes disponíveis
-log_section "CHECKING FOR VOLUME BACKUPS"
-log_info "Searching for volume backups in $LOCAL_BACKUP_DIR..."
+# SEMPRE criar backups fresh na execução
+log_section "CREATING FRESH VOLUME BACKUPS"
+log_info "Creating fresh backups of all Docker volumes..."
 
-if [ ! -d "$LOCAL_BACKUP_DIR" ] || [ -z "$(ls -A $LOCAL_BACKUP_DIR/*.tar.gz 2>/dev/null)" ]; then
-    log_warning "No volume backups found in $LOCAL_BACKUP_DIR"
+# Contar volumes reais no Docker
+DOCKER_VOLUMES_COUNT=$(docker volume ls --quiet | wc -l)
+log_info "Docker volumes found: $DOCKER_VOLUMES_COUNT"
+
+if [ $DOCKER_VOLUMES_COUNT -eq 0 ]; then
+    log_error "No Docker volumes found to backup."
+    exit 1
+fi
+
+# Criar diretório de backup
+mkdir -p "$LOCAL_BACKUP_DIR"
+
+# Verificar se script de backup existe
+BACKUP_SCRIPT="$(dirname "$0")/backup-volumes.sh"
+
+if [ ! -f "$BACKUP_SCRIPT" ]; then
+    log_error "Backup script not found: $BACKUP_SCRIPT"
     echo ""
-    echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${YELLOW}║${NC}  No backups found! You need to create volume backups first.  ${YELLOW}║${NC}"
-    echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
+    echo "  Expected location: $BACKUP_SCRIPT"
     echo ""
-    echo "  Options:"
-    echo "    1. Create backups now (recommended)"
-    echo "    2. Exit and create backups manually later"
+    exit 1
+fi
+
+if [ ! -x "$BACKUP_SCRIPT" ]; then
+    chmod +x "$BACKUP_SCRIPT"
+fi
+
+log_info "Launching backup script..."
+echo ""
+
+# Executar backup-volumes.sh em modo all
+"$BACKUP_SCRIPT" --all --output="$LOCAL_BACKUP_DIR"
+
+BACKUP_EXIT_CODE=$?
+
+if [ $BACKUP_EXIT_CODE -ne 0 ]; then
+    log_error "Backup creation failed with code: $BACKUP_EXIT_CODE"
     echo ""
-    read -p "  Choose option (1 or 2): " BACKUP_OPTION
+    echo "  Please fix the errors and try again."
+    exit 1
+fi
 
-    if [ "$BACKUP_OPTION" = "1" ]; then
-        echo ""
-        log_section "CREATING VOLUME BACKUPS"
+echo ""
+log_success "Fresh backups created successfully!"
+echo ""
 
-        # Verificar se script de backup existe
-        BACKUP_SCRIPT="$(dirname "$0")/backup-volumes.sh"
+# Validar contagem de backups criados (ignorar symlinks -latest)
+BACKUP_FILES_COUNT=$(ls -1 "$LOCAL_BACKUP_DIR"/*-backup-*.tar.gz 2>/dev/null | grep -v "\-latest\.tar\.gz$" | wc -l)
 
-        if [ ! -f "$BACKUP_SCRIPT" ]; then
-            log_error "Backup script not found: $BACKUP_SCRIPT"
-            echo ""
-            echo "  Please create backups manually:"
-            echo "    cd /opt/vpsguardian"
-            echo "    ./migrar/backup-volumes.sh --all"
-            echo ""
-            exit 1
-        fi
+log_section "BACKUP VALIDATION"
+echo "  Docker volumes in origin: $DOCKER_VOLUMES_COUNT"
+echo "  Backup files created: $BACKUP_FILES_COUNT"
+echo ""
 
-        if [ ! -x "$BACKUP_SCRIPT" ]; then
-            chmod +x "$BACKUP_SCRIPT"
-        fi
-
-        log_info "Launching backup script..."
-        echo ""
-
-        # Executar backup-volumes.sh em modo all
-        "$BACKUP_SCRIPT" --all --output="$LOCAL_BACKUP_DIR"
-
-        BACKUP_EXIT_CODE=$?
-
-        if [ $BACKUP_EXIT_CODE -ne 0 ]; then
-            log_error "Backup creation failed with code: $BACKUP_EXIT_CODE"
-            echo ""
-            echo "  Please fix the errors and try again."
-            exit 1
-        fi
-
-        echo ""
-        log_success "Backups created successfully!"
-        echo ""
-
-        # Verificar novamente se backups foram criados
-        if [ -z "$(ls -A $LOCAL_BACKUP_DIR/*.tar.gz 2>/dev/null)" ]; then
-            log_error "No backups found even after running backup script"
-            log_info "Please check if you have Docker volumes to backup"
-            exit 1
-        fi
-
-        log_section "PROCEEDING WITH MIGRATION"
-    else
-        log_info "Migration cancelled by user."
-        echo ""
-        echo "  To create backups manually, run:"
-        echo "    cd /opt/vpsguardian"
-        echo "    ./migrar/backup-volumes.sh --all"
-        echo ""
-        echo "  Then run this migration script again."
-        echo ""
-        exit 0
+if [ $BACKUP_FILES_COUNT -ne $DOCKER_VOLUMES_COUNT ]; then
+    log_error "Mismatch detected!"
+    log_error "Expected $DOCKER_VOLUMES_COUNT backups, but found $BACKUP_FILES_COUNT"
+    echo ""
+    echo "  This could mean:"
+    echo "    - Some volumes failed to backup"
+    echo "    - Permission issues accessing volumes"
+    echo ""
+    read -p "  Continue anyway? (yes/no): " CONTINUE_ANYWAY
+    if [ "$CONTINUE_ANYWAY" != "yes" ]; then
+        log_info "Migration aborted by user."
+        exit 1
     fi
+else
+    log_success "Validation passed! All volumes backed up successfully."
 fi
 
 echo ""
 log_info "Available volume backups:"
 echo ""
 
-BACKUPS=($(ls -t "$LOCAL_BACKUP_DIR"/*.tar.gz 2>/dev/null))
+# Listar apenas backups reais (sem symlinks -latest)
+BACKUPS=($(ls -t "$LOCAL_BACKUP_DIR"/*-backup-*.tar.gz 2>/dev/null | grep -v "\-latest\.tar\.gz$"))
 
 if [ ${#BACKUPS[@]} -eq 0 ]; then
     log_error "No backup files found after check"
@@ -225,7 +223,8 @@ for i in "${!BACKUPS[@]}"; do
     BACKUP_FILE="${BACKUPS[$i]}"
     BACKUP_DATE=$(stat -c %y "$BACKUP_FILE" | cut -d'.' -f1)
     BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-    VOLUME_NAME=$(basename "$BACKUP_FILE" | sed 's/-[0-9_]*\.tar\.gz$//')
+    # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
+    VOLUME_NAME=$(basename "$BACKUP_FILE" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
 
     echo "  [$i] $(basename $BACKUP_FILE)"
     echo "      Volume: $VOLUME_NAME"
@@ -257,7 +256,8 @@ SELECTED_BACKUPS=()
 for idx in $SELECTED_INDICES; do
     if [ $idx -ge 0 ] && [ $idx -lt ${#BACKUPS[@]} ]; then
         SELECTED_BACKUPS+=("${BACKUPS[$idx]}")
-        VOLUME_NAME=$(basename "${BACKUPS[$idx]}" | sed 's/-[0-9_]*\.tar\.gz$//')
+        # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
+        VOLUME_NAME=$(basename "${BACKUPS[$idx]}" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
         VOLUMES_TO_MIGRATE+=("$VOLUME_NAME")
     fi
 done
@@ -400,7 +400,32 @@ echo ""
 log_info "Cleaning up temporary backups on remote server..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "rm -rf $REMOTE_BACKUP_DIR" 2>/dev/null
-log_success "Cleanup complete."
+log_success "Remote cleanup complete."
+
+### ========== CLEANUP LOCAL BACKUPS ==========
+echo ""
+log_warning "Cleaning up local backups..."
+echo ""
+echo "  Local backup directory: $LOCAL_BACKUP_DIR"
+echo "  Space used: $(du -sh "$LOCAL_BACKUP_DIR" | cut -f1)"
+echo ""
+read -p "  Delete local backups to free space? (yes/no): " DELETE_LOCAL
+
+if [ "$DELETE_LOCAL" = "yes" ]; then
+    log_info "Deleting local backups..."
+    rm -rf "$LOCAL_BACKUP_DIR"
+    log_success "Local backups deleted successfully."
+else
+    log_info "Local backups preserved at: $LOCAL_BACKUP_DIR"
+    echo ""
+    echo "  To clean up later, run:"
+    echo "    rm -rf $LOCAL_BACKUP_DIR"
+    echo ""
+    echo "  Or use the maintenance menu:"
+    echo "    vps-guardian"
+    echo "    → Manutenção → Limpar backups antigos"
+    echo ""
+fi
 
 ### ========== FINAL SUMMARY ==========
 echo ""
