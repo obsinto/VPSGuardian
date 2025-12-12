@@ -418,11 +418,15 @@ for i in "${!BACKUPS[@]}"; do
     # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
     VOLUME_NAME=$(basename "$BACKUP_FILE" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
 
-    # Filtrar volumes do sistema Coolify (já migrados via dump SQL)
+    # Filtrar TODOS os volumes do sistema Coolify (já migrados via dump SQL/backup específico)
     if [[ "$VOLUME_NAME" == "coolify-db" ]] || \
        [[ "$VOLUME_NAME" == "coolify-redis" ]] || \
        [[ "$VOLUME_NAME" == "coolify-data" ]] || \
-       [[ "$VOLUME_NAME" == "coolify_db_data" ]]; then
+       [[ "$VOLUME_NAME" == "coolify_db_data" ]] || \
+       [[ "$VOLUME_NAME" == "coolify" ]] || \
+       [[ "$VOLUME_NAME" == "coolify-proxy" ]] || \
+       [[ "$VOLUME_NAME" == "coolify-sentinel" ]] || \
+       [[ "$VOLUME_NAME" == "coolify-realtime" ]]; then
         # Pula silenciosamente este volume para não oferecer risco de corrupção
         continue
     fi
@@ -493,8 +497,12 @@ for idx in $SELECTED_INDICES; do
         if [[ "$CHECK_NAME" == "coolify-db" ]] || \
            [[ "$CHECK_NAME" == "coolify-redis" ]] || \
            [[ "$CHECK_NAME" == "coolify-data" ]] || \
-           [[ "$CHECK_NAME" == "coolify_db_data" ]]; then
-            log_warning "Volume de sistema detectado e ignorado: $CHECK_NAME"
+           [[ "$CHECK_NAME" == "coolify_db_data" ]] || \
+           [[ "$CHECK_NAME" == "coolify" ]] || \
+           [[ "$CHECK_NAME" == "coolify-proxy" ]] || \
+           [[ "$CHECK_NAME" == "coolify-sentinel" ]] || \
+           [[ "$CHECK_NAME" == "coolify-realtime" ]]; then
+            log_warning "Volume de sistema Coolify detectado e ignorado: $CHECK_NAME"
             continue
         fi
         
