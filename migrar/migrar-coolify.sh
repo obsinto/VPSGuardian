@@ -1073,8 +1073,12 @@ if [ $? -eq 0 ]; then
     log_info "Arquivo .env encontrado. Atualizando com APP_KEY do backup..."
 
     # Atualizar APP_KEY no .env
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "cd /data/coolify/source && sed -i '/^APP_PREVIOUS_KEYS=/d' .env && echo \"APP_PREVIOUS_KEYS=$APP_KEY\" >> .env"
+    # Expandir variável localmente e enviar para o servidor remoto
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" bash <<EOF
+cd /data/coolify/source
+sed -i '/^APP_PREVIOUS_KEYS=/d' .env
+echo "APP_PREVIOUS_KEYS=$APP_KEY" >> .env
+EOF
 
     if [ $? -eq 0 ]; then
         log_success "✅ APP_KEY configurado com sucesso!"
