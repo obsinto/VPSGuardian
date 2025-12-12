@@ -1232,4 +1232,68 @@ echo "  3. Verify all applications are running"
 echo "  4. Configure backup scripts on new server"
 echo ""
 
+### ========== OFERECER MIGRAÇÃO DE VOLUMES/APPS ==========
+echo ""
+log_section "MIGRATE APPLICATION VOLUMES?"
+echo ""
+echo "  Coolify has been migrated successfully!"
+echo "  Do you want to migrate your application volumes/data now?"
+echo ""
+echo "  This will:"
+echo "    • List all Docker volumes on the current server"
+echo "    • Let you select which volumes to migrate"
+echo "    • Transfer and restore them on $NEW_SERVER_IP"
+echo ""
+read -p "  Migrate application volumes? (yes/no): " MIGRATE_VOLUMES
+
+if [ "$MIGRATE_VOLUMES" = "yes" ] || [ "$MIGRATE_VOLUMES" = "y" ]; then
+    echo ""
+    log_info "Starting volume migration process..."
+    echo ""
+
+    # Verificar se o script de migração de volumes existe
+    VOLUME_MIGRATION_SCRIPT="$SCRIPT_DIR/migrar-volumes.sh"
+
+    if [ ! -f "$VOLUME_MIGRATION_SCRIPT" ]; then
+        log_error "Volume migration script not found: $VOLUME_MIGRATION_SCRIPT"
+        log_info "You can run it manually later from: $SCRIPT_DIR/migrar-volumes.sh"
+    elif [ ! -x "$VOLUME_MIGRATION_SCRIPT" ]; then
+        log_error "Volume migration script is not executable"
+        log_info "Run: chmod +x $VOLUME_MIGRATION_SCRIPT"
+    else
+        # Exportar variáveis para o script de migração de volumes
+        export NEW_SERVER_IP
+        export NEW_SERVER_USER
+        export NEW_SERVER_PORT
+        export SSH_PRIVATE_KEY_PATH
+        export CONTROL_SOCKET
+
+        # Executar script de migração de volumes
+        log_info "Launching volume migration script..."
+        echo ""
+
+        # Executar em subshell para não interferir com o cleanup atual
+        (
+            cd "$SCRIPT_DIR"
+            exec ./migrar-volumes.sh
+        )
+
+        VOLUME_MIGRATION_EXIT_CODE=$?
+
+        echo ""
+        if [ $VOLUME_MIGRATION_EXIT_CODE -eq 0 ]; then
+            log_success "Volume migration completed successfully!"
+        else
+            log_warning "Volume migration exited with code: $VOLUME_MIGRATION_EXIT_CODE"
+            log_info "Check logs for details"
+        fi
+    fi
+else
+    log_info "Volume migration skipped."
+    echo ""
+    echo "  You can migrate volumes later by running:"
+    echo "  $SCRIPT_DIR/migrar-volumes.sh"
+    echo ""
+fi
+
 cleanup_and_exit 0

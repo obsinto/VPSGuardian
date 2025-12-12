@@ -35,6 +35,22 @@ log() {
     echo "$LOG_PREFIX [ $1 ] $2" | tee -a "$AGENT_LOG"
 }
 
+log_info() {
+    log "INFO" "$1"
+}
+
+log_success() {
+    log "SUCCESS" "✓ $1"
+}
+
+log_error() {
+    log "ERROR" "✗ $1"
+}
+
+log_warning() {
+    log "WARNING" "⚠ $1"
+}
+
 check_success() {
     if [ $1 -eq 0 ]; then
         log_success "$2"
@@ -51,9 +67,15 @@ cleanup_and_exit() {
         log_error "Volume migration failed."
     fi
 
-    log_info "Cleaning up SSH connection..."
-    ssh -S "$CONTROL_SOCKET" -O exit "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null || true
-    rm -f "$CONTROL_SOCKET"
+    # Só fechar conexão SSH se foi criada por este script (não herdada)
+    if [ "$SSH_REUSED" != "true" ]; then
+        log_info "Cleaning up SSH connection..."
+        ssh -S "$CONTROL_SOCKET" -O exit "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null || true
+        rm -f "$CONTROL_SOCKET"
+    else
+        log_info "Keeping SSH connection for parent script."
+    fi
+
     exit $1
 }
 
@@ -162,31 +184,50 @@ fi
 ### ========== SSH SETUP ==========
 log_info "Setting up SSH connection..."
 
-# Verificar chave SSH
-if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-    log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
-    read -p "$LOG_PREFIX [ INPUT ] Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
-
-    if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-        log_error "SSH key not found. Aborting."
-        exit 1
+# Verificar se já existe uma conexão SSH ativa (herdada de migrar-coolify.sh)
+SSH_REUSED=false
+if [ -n "$CONTROL_SOCKET" ] && [ -S "$CONTROL_SOCKET" ]; then
+    log_info "Checking existing SSH connection..."
+    if ssh -S "$CONTROL_SOCKET" -O check "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null; then
+        log_success "Reusing existing SSH connection from Coolify migration."
+        SSH_REUSED=true
+    else
+        log_warning "Existing SSH connection is not active, creating new one..."
+        CONTROL_SOCKET="/tmp/ssh_mux_volumes_$$"
     fi
+else
+    # Se não existe, criar novo CONTROL_SOCKET
+    CONTROL_SOCKET="/tmp/ssh_mux_volumes_$$"
 fi
 
-log_info "Starting ssh-agent..."
-eval "$(ssh-agent -s)" >/dev/null
-ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
-check_success $? "SSH key added to agent."
+# Se não está reutilizando conexão, configurar nova
+if [ "$SSH_REUSED" = false ]; then
+    # Verificar chave SSH
+    if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
+        log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
+        read -p "$LOG_PREFIX [ INPUT ] Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
 
-log_info "Testing SSH connection..."
-ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
-    "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
-check_success $? "SSH connection successful."
+        if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
+            log_error "SSH key not found. Aborting."
+            exit 1
+        fi
+    fi
 
-log_info "Establishing persistent SSH connection..."
-ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
-    "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
-check_success $? "Persistent SSH connection established."
+    log_info "Starting ssh-agent..."
+    eval "$(ssh-agent -s)" >/dev/null
+    ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
+    check_success $? "SSH key added to agent."
+
+    log_info "Testing SSH connection..."
+    ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
+        "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
+    check_success $? "SSH connection successful."
+
+    log_info "Establishing persistent SSH connection..."
+    ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
+        "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
+    check_success $? "Persistent SSH connection established."
+fi
 
 ### ========== VERIFICAR DOCKER NO SERVIDOR REMOTO ==========
 log_info "Checking if Docker is installed on remote server..."
