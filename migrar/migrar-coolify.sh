@@ -1038,23 +1038,7 @@ else
     log_warning "Database restore may have encountered issues. Check $DB_RESTORE_LOG"
 fi
 
-### ========== FINAL INSTALL ==========
-log_section "Final Install"
-log_info "Running final Coolify install to apply all changes..."
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash -s $COOLIFY_VERSION" \
-    >"$FINAL_INSTALL_LOG" 2>&1 &
-
-log_info "Waiting for installation to complete (max 5 minutes)..."
-for i in {1..30}; do
-    sleep 10
-    if grep -q "Your instance is ready to use" "$FINAL_INSTALL_LOG"; then
-        log_success "Coolify installation completed successfully."
-        break
-    fi
-done
-
-### ========== UPDATE APP_KEY (AFTER FINAL INSTALL) ==========
+### ========== UPDATE APP_KEY (BEFORE FINAL INSTALL) ==========
 log_section "Update APP_KEY"
 log_info "⚠️  CRÍTICO: Configurando APP_KEY do backup no .env..."
 echo ""
@@ -1099,6 +1083,22 @@ else
     log_warning "APP_KEY não pode ser configurado. O Coolify pode não funcionar corretamente."
 fi
 echo ""
+
+### ========== FINAL INSTALL ==========
+log_section "Final Install"
+log_info "Running final Coolify install to apply all changes..."
+ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+    "curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash -s $COOLIFY_VERSION" \
+    >"$FINAL_INSTALL_LOG" 2>&1 &
+
+log_info "Waiting for installation to complete (max 5 minutes)..."
+for i in {1..30}; do
+    sleep 10
+    if grep -q "Your instance is ready to use" "$FINAL_INSTALL_LOG"; then
+        log_success "Coolify installation completed successfully."
+        break
+    fi
+done
 
 ### ========== TRANSFER SSH KEYS (AFTER FINAL INSTALL) ==========
 log_section "Transfer SSH Keys"
