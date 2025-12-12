@@ -31,24 +31,40 @@ AGENT_LOG="$LOG_DIR/volume-migration-$(date +%Y%m%d_%H%M%S).log"
 
 ### ========== FUNÇÕES ==========
 
+# Cores para melhor visualização
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 log() {
     echo "$LOG_PREFIX [ $1 ] $2" | tee -a "$AGENT_LOG"
 }
 
 log_info() {
-    log "INFO" "$1"
+    echo -e "${BLUE}$LOG_PREFIX${NC} [ INFO ] $1" | tee -a "$AGENT_LOG"
 }
 
 log_success() {
-    log "SUCCESS" "✓ $1"
+    echo -e "${GREEN}$LOG_PREFIX${NC} [ ✓ ] $1" | tee -a "$AGENT_LOG"
 }
 
 log_error() {
-    log "ERROR" "✗ $1"
+    echo -e "${RED}$LOG_PREFIX${NC} [ ✗ ] $1" | tee -a "$AGENT_LOG"
 }
 
 log_warning() {
-    log "WARNING" "⚠ $1"
+    echo -e "${YELLOW}$LOG_PREFIX${NC} [ ⚠ ] $1" | tee -a "$AGENT_LOG"
+}
+
+log_section() {
+    echo "" | tee -a "$AGENT_LOG"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}" | tee -a "$AGENT_LOG"
+    echo -e "${CYAN}  $1${NC}" | tee -a "$AGENT_LOG"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}" | tee -a "$AGENT_LOG"
+    echo "" | tee -a "$AGENT_LOG"
 }
 
 check_success() {
@@ -81,39 +97,128 @@ cleanup_and_exit() {
 
 trap cleanup_and_exit SIGINT SIGTERM
 
+### ========== APRESENTAÇÃO ==========
+
+echo ""
+echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║${NC}                                                               ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}          ${GREEN}🚀 DOCKER VOLUME MIGRATION AGENT 🚀${NC}              ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}                                                               ${CYAN}║${NC}"
+echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
 ### ========== PROMPTS INTERATIVOS ==========
 
-log_info "========== DOCKER VOLUME MIGRATION =========="
+log_section "SERVER CONFIGURATION"
 
 if [ -z "$NEW_SERVER_IP" ]; then
-    read -p "$LOG_PREFIX [ INPUT ] Enter the NEW server IP address: " NEW_SERVER_IP
+    echo -e "${BLUE}Enter destination server details:${NC}"
+    echo ""
+    read -p "  New server IP address: " NEW_SERVER_IP
 fi
-log_info "Target server: $NEW_SERVER_IP"
+log_success "Target server: $NEW_SERVER_IP"
 
 if [ -z "$NEW_SERVER_USER" ] || [ "$NEW_SERVER_USER" = "root" ]; then
-    read -p "$LOG_PREFIX [ INPUT ] SSH user (default: root): " INPUT_USER
+    read -p "  SSH user (default: root): " INPUT_USER
     NEW_SERVER_USER=${INPUT_USER:-root}
 fi
+log_info "SSH user: $NEW_SERVER_USER"
 
 if [ -z "$NEW_SERVER_PORT" ] || [ "$NEW_SERVER_PORT" = "22" ]; then
-    read -p "$LOG_PREFIX [ INPUT ] SSH port (default: 22): " INPUT_PORT
+    read -p "  SSH port (default: 22): " INPUT_PORT
     NEW_SERVER_PORT=${INPUT_PORT:-22}
 fi
+log_info "SSH port: $NEW_SERVER_PORT"
 
 # Listar backups de volumes disponíveis
+log_section "CHECKING FOR VOLUME BACKUPS"
 log_info "Searching for volume backups in $LOCAL_BACKUP_DIR..."
 
 if [ ! -d "$LOCAL_BACKUP_DIR" ] || [ -z "$(ls -A $LOCAL_BACKUP_DIR/*.tar.gz 2>/dev/null)" ]; then
-    log_error "No volume backups found in $LOCAL_BACKUP_DIR"
-    log_info "Please create volume backups first using backup-volume or backup-volume-interativo"
-    exit 1
+    log_warning "No volume backups found in $LOCAL_BACKUP_DIR"
+    echo ""
+    echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${YELLOW}║${NC}  No backups found! You need to create volume backups first.  ${YELLOW}║${NC}"
+    echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "  Options:"
+    echo "    1. Create backups now (recommended)"
+    echo "    2. Exit and create backups manually later"
+    echo ""
+    read -p "  Choose option (1 or 2): " BACKUP_OPTION
+
+    if [ "$BACKUP_OPTION" = "1" ]; then
+        echo ""
+        log_section "CREATING VOLUME BACKUPS"
+
+        # Verificar se script de backup existe
+        BACKUP_SCRIPT="$(dirname "$0")/backup-volumes.sh"
+
+        if [ ! -f "$BACKUP_SCRIPT" ]; then
+            log_error "Backup script not found: $BACKUP_SCRIPT"
+            echo ""
+            echo "  Please create backups manually:"
+            echo "    cd /opt/vpsguardian"
+            echo "    ./migrar/backup-volumes.sh --all"
+            echo ""
+            exit 1
+        fi
+
+        if [ ! -x "$BACKUP_SCRIPT" ]; then
+            chmod +x "$BACKUP_SCRIPT"
+        fi
+
+        log_info "Launching backup script..."
+        echo ""
+
+        # Executar backup-volumes.sh em modo all
+        "$BACKUP_SCRIPT" --all --output="$LOCAL_BACKUP_DIR"
+
+        BACKUP_EXIT_CODE=$?
+
+        if [ $BACKUP_EXIT_CODE -ne 0 ]; then
+            log_error "Backup creation failed with code: $BACKUP_EXIT_CODE"
+            echo ""
+            echo "  Please fix the errors and try again."
+            exit 1
+        fi
+
+        echo ""
+        log_success "Backups created successfully!"
+        echo ""
+
+        # Verificar novamente se backups foram criados
+        if [ -z "$(ls -A $LOCAL_BACKUP_DIR/*.tar.gz 2>/dev/null)" ]; then
+            log_error "No backups found even after running backup script"
+            log_info "Please check if you have Docker volumes to backup"
+            exit 1
+        fi
+
+        log_section "PROCEEDING WITH MIGRATION"
+    else
+        log_info "Migration cancelled by user."
+        echo ""
+        echo "  To create backups manually, run:"
+        echo "    cd /opt/vpsguardian"
+        echo "    ./migrar/backup-volumes.sh --all"
+        echo ""
+        echo "  Then run this migration script again."
+        echo ""
+        exit 0
+    fi
 fi
 
 echo ""
 log_info "Available volume backups:"
 echo ""
 
-BACKUPS=($(ls -t "$LOCAL_BACKUP_DIR"/*.tar.gz))
+BACKUPS=($(ls -t "$LOCAL_BACKUP_DIR"/*.tar.gz 2>/dev/null))
+
+if [ ${#BACKUPS[@]} -eq 0 ]; then
+    log_error "No backup files found after check"
+    exit 1
+fi
+
 VOLUMES_TO_MIGRATE=()
 
 for i in "${!BACKUPS[@]}"; do
