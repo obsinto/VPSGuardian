@@ -12,8 +12,10 @@ NEW_SERVER_IP=""
 NEW_SERVER_USER="root"
 NEW_SERVER_PORT="22"
 
-# Autenticação SSH
+# Autenticação SSH (escolher método: key ou password)
+SSH_AUTH_METHOD="" # Será definido interativamente (key ou password)
 SSH_PRIVATE_KEY_PATH="/root/.ssh/id_rsa"
+SSH_PASSWORD="" # Será solicitado se método password for escolhido
 
 # Diretórios
 LOCAL_BACKUP_DIR="/root/volume-backups"
@@ -96,6 +98,37 @@ cleanup_and_exit() {
 }
 
 trap cleanup_and_exit SIGINT SIGTERM
+
+# Função auxiliar para executar comandos SSH (suporta key e password)
+ssh_exec() {
+    if [ "$SSH_AUTH_METHOD" = "password" ]; then
+        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" "$@"
+    else
+        # Usa ControlMaster se disponível
+        if [ -S "$CONTROL_SOCKET" ]; then
+            ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "$@"
+        else
+            ssh -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" "$@"
+        fi
+    fi
+}
+
+# Função auxiliar para transferir arquivos via SCP (suporta key e password)
+scp_exec() {
+    local source="$1"
+    local dest="$2"
+
+    if [ "$SSH_AUTH_METHOD" = "password" ]; then
+        sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -P "$NEW_SERVER_PORT" "$source" "$dest"
+    else
+        # Usa ControlMaster se disponível
+        if [ -S "$CONTROL_SOCKET" ]; then
+            scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" "$source" "$dest"
+        else
+            scp -P "$NEW_SERVER_PORT" "$source" "$dest"
+        fi
+    fi
+}
 
 ### ========== APRESENTAÇÃO ==========
 
@@ -286,6 +319,75 @@ if [ "$CONFIRM" != "yes" ]; then
     exit 0
 fi
 
+### ========== ESCOLHER MÉTODO DE AUTENTICAÇÃO SSH ==========
+log_section "SSH AUTHENTICATION METHOD"
+
+echo -e "${CYAN}Choose SSH authentication method:${NC}"
+echo ""
+echo "  ${GREEN}[1] SSH Key (RECOMMENDED)${NC}"
+echo "      ✅ More secure"
+echo "      ✅ No password prompts during migration"
+echo "      ✅ Industry best practice"
+echo ""
+echo "  ${YELLOW}[2] Password${NC}"
+echo "      ⚠️  Less secure"
+echo "      ⚠️  May prompt for password multiple times"
+echo "      ⚠️  Not recommended for automation"
+echo ""
+
+read -p "$LOG_PREFIX [ INPUT ] Select method [1/2] (default: 1): " AUTH_CHOICE
+AUTH_CHOICE=${AUTH_CHOICE:-1}
+
+if [ "$AUTH_CHOICE" = "1" ]; then
+    SSH_AUTH_METHOD="key"
+    log_success "Authentication method: SSH Key"
+elif [ "$AUTH_CHOICE" = "2" ]; then
+    SSH_AUTH_METHOD="password"
+    log_warning "Authentication method: Password"
+
+    # Verificar se sshpass está instalado
+    if ! command -v sshpass &> /dev/null; then
+        log_error "sshpass is not installed. Password authentication requires sshpass."
+        echo ""
+        echo "  Install sshpass:"
+        echo "    Ubuntu/Debian: sudo apt-get install -y sshpass"
+        echo "    CentOS/RHEL:   sudo yum install -y sshpass"
+        echo ""
+        read -p "  Install sshpass now? (yes/no): " INSTALL_SSHPASS
+
+        if [ "$INSTALL_SSHPASS" = "yes" ]; then
+            log_info "Installing sshpass..."
+            if command -v apt-get &> /dev/null; then
+                apt-get update -qq && apt-get install -y sshpass >/dev/null 2>&1
+            elif command -v yum &> /dev/null; then
+                yum install -y sshpass >/dev/null 2>&1
+            else
+                log_error "Cannot auto-install sshpass. Please install manually."
+                exit 1
+            fi
+            check_success $? "sshpass installed successfully."
+        else
+            log_error "Cannot continue without sshpass. Aborting."
+            exit 1
+        fi
+    fi
+
+    # Solicitar senha
+    echo ""
+    read -sp "$LOG_PREFIX [ INPUT ] Enter SSH password for $NEW_SERVER_USER@$NEW_SERVER_IP: " SSH_PASSWORD
+    echo ""
+
+    if [ -z "$SSH_PASSWORD" ]; then
+        log_error "Password cannot be empty."
+        exit 1
+    fi
+
+    log_success "Password configured."
+else
+    log_error "Invalid option. Aborting."
+    exit 1
+fi
+
 ### ========== SSH SETUP ==========
 log_info "Setting up SSH connection..."
 
@@ -307,43 +409,67 @@ fi
 
 # Se não está reutilizando conexão, configurar nova
 if [ "$SSH_REUSED" = false ]; then
-    # Verificar chave SSH
-    if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-        log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
-        read -p "$LOG_PREFIX [ INPUT ] Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
+    if [ "$SSH_AUTH_METHOD" = "key" ]; then
+        # ========== AUTENTICAÇÃO POR CHAVE SSH ==========
 
+        # Verificar chave SSH
         if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-            log_error "SSH key not found. Aborting."
+            log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
+            read -p "$LOG_PREFIX [ INPUT ] Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
+
+            if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
+                log_error "SSH key not found. Aborting."
+                exit 1
+            fi
+        fi
+
+        log_info "Starting ssh-agent..."
+        eval "$(ssh-agent -s)" >/dev/null
+        ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
+        check_success $? "SSH key added to agent."
+
+        log_info "Testing SSH connection..."
+        ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
+            "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
+        check_success $? "SSH connection successful."
+
+        log_info "Establishing persistent SSH connection..."
+        ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
+            "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
+        check_success $? "Persistent SSH connection established."
+
+    elif [ "$SSH_AUTH_METHOD" = "password" ]; then
+        # ========== AUTENTICAÇÃO POR SENHA ==========
+
+        log_info "Testing SSH connection with password..."
+        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
+
+        if [ $? -ne 0 ]; then
+            log_error "SSH connection failed. Please check:"
+            echo "  - Server IP/hostname is correct"
+            echo "  - Username and password are correct"
+            echo "  - SSH port is correct"
+            echo "  - Server allows password authentication"
             exit 1
         fi
+
+        log_success "SSH connection successful."
+
+        # NÃO estabelecer ControlMaster com senha (não funciona bem)
+        # Vamos usar sshpass diretamente em cada comando
+        log_info "Using password authentication for each SSH command."
     fi
-
-    log_info "Starting ssh-agent..."
-    eval "$(ssh-agent -s)" >/dev/null
-    ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
-    check_success $? "SSH key added to agent."
-
-    log_info "Testing SSH connection..."
-    ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
-        "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
-    check_success $? "SSH connection successful."
-
-    log_info "Establishing persistent SSH connection..."
-    ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
-        "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
-    check_success $? "Persistent SSH connection established."
 fi
 
 ### ========== VERIFICAR DOCKER NO SERVIDOR REMOTO ==========
 log_info "Checking if Docker is installed on remote server..."
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "command -v docker >/dev/null 2>&1"
+ssh_exec "command -v docker >/dev/null 2>&1"
 check_success $? "Docker is installed on remote server."
 
 ### ========== PREPARAR SERVIDOR REMOTO ==========
 log_info "Preparing remote server..."
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "mkdir -p $REMOTE_BACKUP_DIR"
+ssh_exec "mkdir -p $REMOTE_BACKUP_DIR"
 check_success $? "Remote directory created: $REMOTE_BACKUP_DIR"
 
 ### ========== MIGRAR VOLUMES ==========
@@ -360,8 +486,7 @@ for i in "${!SELECTED_BACKUPS[@]}"; do
 
     # 1. Transferir backup
     log_info "Transferring backup: $BACKUP_FILENAME..."
-    scp -o ControlPath="$CONTROL_SOCKET" -P "$NEW_SERVER_PORT" \
-        "$BACKUP_FILE" "$NEW_SERVER_USER@$NEW_SERVER_IP:$REMOTE_BACKUP_DIR/" >/dev/null 2>&1
+    scp_exec "$BACKUP_FILE" "$NEW_SERVER_USER@$NEW_SERVER_IP:$REMOTE_BACKUP_DIR/" >/dev/null 2>&1
 
     if [ $? -ne 0 ]; then
         log_error "Failed to transfer backup for $VOLUME_NAME"
@@ -372,22 +497,19 @@ for i in "${!SELECTED_BACKUPS[@]}"; do
 
     # 2. Criar volume no servidor remoto (se não existir)
     log_info "Creating volume '$VOLUME_NAME' on remote server..."
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "docker volume create $VOLUME_NAME" >/dev/null 2>&1
+    ssh_exec "docker volume create $VOLUME_NAME" >/dev/null 2>&1
     log_success "Volume created or already exists."
 
     # 3. Restaurar volume
     log_info "Restoring volume data..."
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "docker run --rm -v $VOLUME_NAME:/volume -v $REMOTE_BACKUP_DIR:/backup busybox sh -c 'cd /volume && tar xzf /backup/$BACKUP_FILENAME'" 2>/dev/null
+    ssh_exec "docker run --rm -v $VOLUME_NAME:/volume -v $REMOTE_BACKUP_DIR:/backup busybox sh -c 'cd /volume && tar xzf /backup/$BACKUP_FILENAME'" 2>/dev/null
 
     if [ $? -eq 0 ]; then
         log_success "Volume '$VOLUME_NAME' restored successfully."
         ((MIGRATED_COUNT++))
 
         # Verificar conteúdo
-        FILES_COUNT=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-            "docker run --rm -v $VOLUME_NAME:/volume busybox find /volume -type f" 2>/dev/null | wc -l)
+        FILES_COUNT=$(ssh_exec "docker run --rm -v $VOLUME_NAME:/volume busybox find /volume -type f" 2>/dev/null | wc -l)
         log_info "Files restored: $FILES_COUNT"
     else
         log_error "Failed to restore volume '$VOLUME_NAME'"
@@ -398,8 +520,7 @@ done
 ### ========== CLEANUP REMOTE BACKUPS ==========
 echo ""
 log_info "Cleaning up temporary backups on remote server..."
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "rm -rf $REMOTE_BACKUP_DIR" 2>/dev/null
+ssh_exec "rm -rf $REMOTE_BACKUP_DIR" 2>/dev/null
 log_success "Remote cleanup complete."
 
 ### ========== CLEANUP LOCAL BACKUPS ==========
