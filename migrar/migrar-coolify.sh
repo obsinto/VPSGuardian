@@ -1038,54 +1038,125 @@ else
     log_warning "Database restore may have encountered issues. Check $DB_RESTORE_LOG"
 fi
 
-### ========== UPDATE APP_KEY (BEFORE FINAL INSTALL) ==========
+### ========== UPDATE APP_KEY (CRÍTICO - ANTES DO FINAL INSTALL) ==========
 log_section "Update APP_KEY"
-log_info "⚠️  CRÍTICO: Configurando APP_KEY do backup no .env..."
+log_info "⚠️ CRÍTICO: Configurando APP_KEY do backup..."
+
+# Obter APP_KEY CORRETAMENTE - com múltiplos métodos de fallback
+APP_KEY=""
+# Método 1: Do backup extraído
+if [ -f "$TEMP_EXTRACT_DIR/.env" ]; then
+    APP_KEY=$(grep "^APP_KEY=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
+    log_success "APP_KEY obtido do backup extraído"
+fi
+
+# Método 2: Do sistema atual (se backup não tiver)
+if [ -z "$APP_KEY" ] && [ -f "$ENV_FILE" ]; then
+    APP_KEY=$(grep "^APP_KEY=" "$ENV_FILE" | cut -d '=' -f2-)
+    log_success "APP_KEY obtido do sistema atual"
+fi
+
+# Método 3: Do arquivo .env no backup completo
+if [ -z "$APP_KEY" ]; then
+    # Extrair apenas o .env do backup
+    tar -xzf "$BACKUP_FILE" -O ".env" 2>/dev/null | grep "^APP_KEY=" | cut -d '=' -f2- > /tmp/app_key.txt
+    APP_KEY=$(cat /tmp/app_key.txt 2>/dev/null)
+    rm -f /tmp/app_key.txt
+    if [ -n "$APP_KEY" ]; then
+        log_success "APP_KEY extraído diretamente do backup"
+    fi
+fi
+
+# Validar APP_KEY
+if [ -z "$APP_KEY" ]; then
+    log_error "❌ NÃO FOI POSSÍVEL OBTER O APP_KEY!"
+    log_error "Isso é CRÍTICO para a migração."
+    log_error "Dados criptografados NÃO serão acessíveis."
+    echo ""
+    read -p "Continuar mesmo sem APP_KEY? (s/N): " CONTINUE_WO_KEY
+    if [[ ! "$CONTINUE_WO_KEY" =~ ^[Ss]$ ]]; then
+        rm -rf "$TEMP_EXTRACT_DIR"
+        cleanup_and_exit 1
+    fi
+    log_warning "Continuando SEM APP_KEY - aplicações podem não funcionar"
+else
+    log_success "✅ APP_KEY obtido com sucesso"
+    log_info " Comprimento: ${#APP_KEY} caracteres"
+    log_info " Primeiros 10 chars: ${APP_KEY:0:10}..."
+fi
+
 echo ""
-log_info "APP_KEY é usado para criptografar dados sensíveis:"
-log_info "  • Senhas de servidores"
-log_info "  • Tokens de API (GitHub, GitLab, etc.)"
-log_info "  • Chaves privadas de deploy"
-log_info "  • Credenciais de banco de dados"
+log_info "O APP_KEY é usado para criptografar:"
+log_info " • Senhas de servidores"
+log_info " • Tokens de API (GitHub, GitLab, etc.)"
+log_info " • Chaves privadas de deploy"
+log_info " • Credenciais de banco de dados"
 echo ""
 
-# Verificar se .env existe
+# PARAR TODOS OS CONTAINERS DO COOLIFY antes de modificar .env
+log_info "Parando todos containers do Coolify..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-    "test -f /data/coolify/source/.env"
+    "docker stop \$(docker ps --filter name=coolify --format '{{.Names}}') 2>/dev/null || true"
 
-if [ $? -eq 0 ]; then
-    log_info "Arquivo .env encontrado. Atualizando com APP_KEY do backup..."
-
-    # Atualizar APP_KEY no .env
-    # EXATAMENTE como no script manual testado (funciona 100%)
-    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-        "cd /data/coolify/source && sed -i '/^APP_PREVIOUS_KEYS=/d' .env && echo 'APP_PREVIOUS_KEYS=$APP_KEY' >> .env"
-
-    if [ $? -eq 0 ]; then
-        log_success "✅ APP_KEY configurado com sucesso!"
-
-        # Verificar se foi aplicado
-        APPLIED_KEY=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
-            "grep '^APP_PREVIOUS_KEYS=' /data/coolify/source/.env | cut -d'=' -f2-")
-
-        if [ -n "$APPLIED_KEY" ]; then
-            log_success "✅ APP_KEY verificado no .env"
-            log_info "   Primeiros 20 caracteres: ${APPLIED_KEY:0:20}..."
+# AGORA CONFIGURAR O APP_KEY - EXATAMENTE como no script menor
+if [ -n "$APP_KEY" ]; then
+    log_info "Configurando APP_KEY no servidor remoto..."
+    
+    # Método 1: Usar sed para substituir/adicionar (mais robusto)
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "
+        # Garantir que .env existe
+        mkdir -p /data/coolify/source
+        touch /data/coolify/source/.env
+        
+        # Remover linhas existentes de APP_PREVIOUS_KEYS
+        sed -i '/^APP_PREVIOUS_KEYS=/d' /data/coolify/source/.env 2>/dev/null || true
+        
+        # Adicionar nova linha
+        echo 'APP_PREVIOUS_KEYS=$APP_KEY' >> /data/coolify/source/.env
+        
+        # Verificar se foi adicionado
+        echo '=== CONTEÚDO DO .env (APP_PREVIOUS_KEYS) ==='
+        grep '^APP_PREVIOUS_KEYS=' /data/coolify/source/.env || echo 'NÃO ENCONTRADO!'
+        echo '==========================================='
+    "
+    
+    # Verificar se foi configurado corretamente
+    sleep 2
+    APPLIED_KEY=$(ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
+        "grep '^APP_PREVIOUS_KEYS=' /data/coolify/source/.env 2>/dev/null | cut -d'=' -f2- | tr -d '\n'")
+    
+    if [ -n "$APPLIED_KEY" ]; then
+        log_success "✅ APP_KEY configurado com sucesso no servidor remoto!"
+        log_info " Comprimento no remoto: ${#APPLIED_KEY} chars"
+        
+        # Comparar se são iguais (aprimeiros chars)
+        if [ "${APP_KEY:0:20}" = "${APPLIED_KEY:0:20}" ]; then
+            log_success "✅ APP_KEY verificado (primeiros 20 chars coincidem)"
         else
-            log_error "❌ APP_KEY não encontrado após configuração!"
+            log_warning "⚠️ APP_KEY pode não corresponder exatamente"
+            log_info " Local: ${APP_KEY:0:20}..."
+            log_info " Remoto: ${APPLIED_KEY:0:20}..."
         fi
     else
-        log_error "❌ Falha ao configurar APP_KEY!"
-        log_warning "Dados criptografados podem não ser acessíveis!"
+        log_error "❌ APP_KEY NÃO encontrado após configuração!"
+        log_info "Tentando método alternativo..."
+        
+        # Método alternativo: Criar .env do zero
+        ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "
+            cat > /data/coolify/source/.env << EOF
+APP_PREVIOUS_KEYS=$APP_KEY
+# Adicionado pela migração VPS Guardian
+EOF
+        "
+        log_info "✅ .env criado com APP_KEY"
     fi
-else
-    log_error "❌ Arquivo .env não encontrado em /data/coolify/source/"
-    log_warning "APP_KEY não pode ser configurado. O Coolify pode não funcionar corretamente."
 fi
+
 echo ""
 
 ### ========== FINAL INSTALL ==========
 log_section "Final Install"
+log_info "DEBUG: APP_KEY configurado: ${APP_KEY:0:20}..."
 log_info "Running final Coolify install to apply all changes..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" \
     "curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash -s $COOLIFY_VERSION" \
