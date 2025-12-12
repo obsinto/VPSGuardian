@@ -487,86 +487,125 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 
 ### ========== ESCOLHER MÉTODO DE AUTENTICAÇÃO SSH ==========
-log_section "SSH AUTHENTICATION METHOD"
+log_section "MÉTODO DE AUTENTICAÇÃO SSH"
 
-echo -e "${CYAN}Choose SSH authentication method:${NC}"
+echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║${NC}  Escolha o método de autenticação SSH para o servidor      ${CYAN}║${NC}"
+echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "  ${GREEN}[1] SSH Key (RECOMMENDED)${NC}"
-echo "      ✅ More secure"
-echo "      ✅ No password prompts during migration"
-echo "      ✅ Industry best practice"
+echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${GREEN}[1] Chave SSH (RECOMENDADO) 🔑${NC}"
+echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "  ${YELLOW}[2] Password${NC}"
-echo "      ⚠️  Less secure"
-echo "      ⚠️  May prompt for password multiple times"
-echo "      ⚠️  Not recommended for automation"
+echo "      ✅ Máxima segurança (criptografia assimétrica)"
+echo "      ✅ Sem solicitação de senha durante a migração"
+echo "      ✅ Padrão da indústria e melhores práticas DevOps"
+echo "      ✅ Permite automação segura de processos"
+echo "      ✅ Auditável e rastreável"
+echo ""
+echo "      📋 Pré-requisito: Chave SSH configurada em ~/.ssh/id_rsa"
+echo "                       ou será solicitado o caminho alternativo"
+echo ""
+echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${YELLOW}[2] Senha (Autenticação por Senha) 🔓${NC}"
+echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo "      ⚠️  Menor segurança (senha trafega pela rede)"
+echo "      ⚠️  Pode solicitar senha múltiplas vezes"
+echo "      ⚠️  Não recomendado para ambientes de produção"
+echo "      ⚠️  Dificulta automação de processos"
+echo "      ⚠️  Vulnerável a ataques de força bruta"
+echo ""
+echo "      📋 Pré-requisito: Servidor deve permitir autenticação por senha"
+echo "                       (PasswordAuthentication yes no sshd_config)"
+echo ""
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-read -p "$LOG_PREFIX [ INPUT ] Select method [1/2] (default: 1): " AUTH_CHOICE
+read -p "$LOG_PREFIX [ INPUT ] Selecione o método [1/2] (padrão: 1): " AUTH_CHOICE
 AUTH_CHOICE=${AUTH_CHOICE:-1}
 
 if [ "$AUTH_CHOICE" = "1" ]; then
     SSH_AUTH_METHOD="key"
-    log_success "Authentication method: SSH Key"
+    echo ""
+    log_success "Método de autenticação: Chave SSH 🔑"
 elif [ "$AUTH_CHOICE" = "2" ]; then
     SSH_AUTH_METHOD="password"
-    log_warning "Authentication method: Password"
+    echo ""
+    log_warning "Método de autenticação: Senha 🔓"
+    log_warning "ATENÇÃO: Este método é menos seguro. Considere usar chave SSH."
 
     # Verificar se sshpass está instalado
     if ! command -v sshpass &> /dev/null; then
-        log_error "sshpass is not installed. Password authentication requires sshpass."
         echo ""
-        echo "  Install sshpass:"
-        echo "    Ubuntu/Debian: sudo apt-get install -y sshpass"
-        echo "    CentOS/RHEL:   sudo yum install -y sshpass"
+        log_error "O pacote 'sshpass' não está instalado."
+        log_error "Autenticação por senha requer o sshpass."
         echo ""
-        read -p "  Install sshpass now? (yes/no): " INSTALL_SSHPASS
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+        echo "  Para instalar o sshpass:"
+        echo ""
+        echo "    Ubuntu/Debian:  sudo apt-get install -y sshpass"
+        echo "    CentOS/RHEL:    sudo yum install -y sshpass"
+        echo "    Alpine:         apk add sshpass"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+        echo ""
+        read -p "  Deseja instalar o sshpass agora? (yes/no): " INSTALL_SSHPASS
 
         if [ "$INSTALL_SSHPASS" = "yes" ]; then
-            log_info "Installing sshpass..."
+            log_info "Instalando sshpass..."
             if command -v apt-get &> /dev/null; then
                 apt-get update -qq && apt-get install -y sshpass >/dev/null 2>&1
             elif command -v yum &> /dev/null; then
                 yum install -y sshpass >/dev/null 2>&1
+            elif command -v apk &> /dev/null; then
+                apk add sshpass >/dev/null 2>&1
             else
-                log_error "Cannot auto-install sshpass. Please install manually."
+                log_error "Não foi possível instalar automaticamente."
+                log_error "Por favor, instale o sshpass manualmente."
                 exit 1
             fi
-            check_success $? "sshpass installed successfully."
+            check_success $? "sshpass instalado com sucesso."
         else
-            log_error "Cannot continue without sshpass. Aborting."
+            log_error "Não é possível continuar sem o sshpass. Abortando."
             exit 1
         fi
     fi
 
     # Solicitar senha
     echo ""
-    read -sp "$LOG_PREFIX [ INPUT ] Enter SSH password for $NEW_SERVER_USER@$NEW_SERVER_IP: " SSH_PASSWORD
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}  CONFIGURAÇÃO DE SENHA SSH${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "  Servidor: $NEW_SERVER_USER@$NEW_SERVER_IP"
+    echo "  Porta:    $NEW_SERVER_PORT"
+    echo ""
+    read -sp "  Digite a senha SSH: " SSH_PASSWORD
     echo ""
 
     if [ -z "$SSH_PASSWORD" ]; then
-        log_error "Password cannot be empty."
+        log_error "A senha não pode estar vazia."
         exit 1
     fi
 
-    log_success "Password configured."
+    log_success "Senha configurada com sucesso."
 else
-    log_error "Invalid option. Aborting."
+    log_error "Opção inválida. Abortando."
     exit 1
 fi
 
-### ========== SSH SETUP ==========
-log_info "Setting up SSH connection..."
+### ========== CONFIGURAÇÃO SSH ==========
+log_info "Configurando conexão SSH com o servidor de destino..."
 
 # Verificar se já existe uma conexão SSH ativa (herdada de migrar-coolify.sh)
 SSH_REUSED=false
 if [ -n "$CONTROL_SOCKET" ] && [ -S "$CONTROL_SOCKET" ]; then
-    log_info "Checking existing SSH connection..."
+    log_info "Verificando conexão SSH existente..."
     if ssh -S "$CONTROL_SOCKET" -O check "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null; then
-        log_success "Reusing existing SSH connection from Coolify migration."
+        log_success "Reutilizando conexão SSH existente da migração do Coolify."
         SSH_REUSED=true
     else
-        log_warning "Existing SSH connection is not active, creating new one..."
+        log_warning "Conexão SSH existente não está ativa, criando nova..."
         CONTROL_SOCKET="/tmp/ssh_mux_volumes_$$"
     fi
 else
@@ -581,58 +620,66 @@ if [ "$SSH_REUSED" = false ]; then
 
         # Verificar chave SSH
         if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-            log_warning "SSH key not found at $SSH_PRIVATE_KEY_PATH"
-            read -p "$LOG_PREFIX [ INPUT ] Enter path to SSH private key: " SSH_PRIVATE_KEY_PATH
+            log_warning "Chave SSH não encontrada em: $SSH_PRIVATE_KEY_PATH"
+            echo ""
+            read -p "$LOG_PREFIX [ INPUT ] Digite o caminho da chave SSH privada: " SSH_PRIVATE_KEY_PATH
 
             if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
-                log_error "SSH key not found. Aborting."
+                log_error "Chave SSH não encontrada. Abortando."
                 exit 1
             fi
         fi
 
-        log_info "Starting ssh-agent..."
+        log_info "Iniciando ssh-agent..."
         eval "$(ssh-agent -s)" >/dev/null
         ssh-add "$SSH_PRIVATE_KEY_PATH" >/dev/null 2>&1
-        check_success $? "SSH key added to agent."
+        check_success $? "Chave SSH adicionada ao agente."
 
-        log_info "Testing SSH connection..."
+        log_info "Testando conexão SSH..."
         ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$NEW_SERVER_PORT" \
             "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
-        check_success $? "SSH connection successful."
+        check_success $? "Conexão SSH estabelecida com sucesso."
 
-        log_info "Establishing persistent SSH connection..."
+        log_info "Estabelecendo conexão SSH persistente..."
         ssh -fN -M -S "$CONTROL_SOCKET" -p "$NEW_SERVER_PORT" \
             "$NEW_SERVER_USER@$NEW_SERVER_IP" 2>/dev/null
-        check_success $? "Persistent SSH connection established."
+        check_success $? "Conexão SSH persistente estabelecida."
 
     elif [ "$SSH_AUTH_METHOD" = "password" ]; then
         # ========== AUTENTICAÇÃO POR SENHA ==========
 
-        log_info "Testing SSH connection with password..."
+        log_info "Testando conexão SSH com senha..."
         sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
             -p "$NEW_SERVER_PORT" "$NEW_SERVER_USER@$NEW_SERVER_IP" "exit" >/dev/null 2>&1
 
         if [ $? -ne 0 ]; then
-            log_error "SSH connection failed. Please check:"
-            echo "  - Server IP/hostname is correct"
-            echo "  - Username and password are correct"
-            echo "  - SSH port is correct"
-            echo "  - Server allows password authentication"
+            log_error "Falha na conexão SSH. Verifique:"
+            echo ""
+            echo "  ❌ IP/hostname do servidor está correto?"
+            echo "  ❌ Usuário e senha estão corretos?"
+            echo "  ❌ Porta SSH está correta?"
+            echo "  ❌ Servidor permite autenticação por senha?"
+            echo ""
+            echo "  💡 Dica: Para habilitar autenticação por senha no servidor:"
+            echo "     1. Edite /etc/ssh/sshd_config"
+            echo "     2. Defina: PasswordAuthentication yes"
+            echo "     3. Reinicie: systemctl restart sshd"
+            echo ""
             exit 1
         fi
 
-        log_success "SSH connection successful."
+        log_success "Conexão SSH estabelecida com sucesso."
 
         # NÃO estabelecer ControlMaster com senha (não funciona bem)
         # Vamos usar sshpass diretamente em cada comando
-        log_info "Using password authentication for each SSH command."
+        log_info "Usando autenticação por senha para cada comando SSH."
     fi
 fi
 
 ### ========== VERIFICAR DOCKER NO SERVIDOR REMOTO ==========
-log_info "Checking if Docker is installed on remote server..."
+log_info "Verificando se Docker está instalado no servidor remoto..."
 ssh_exec "command -v docker >/dev/null 2>&1"
-check_success $? "Docker is installed on remote server."
+check_success $? "Docker está instalado no servidor remoto."
 
 ### ========== PREPARAR SERVIDOR REMOTO ==========
 log_info "Preparing remote server..."
