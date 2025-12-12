@@ -378,7 +378,7 @@ if [ ! -f "$SSH_PRIVATE_KEY_PATH" ]; then
         echo "Opções disponíveis:"
 
         if [ ${#MIGRATION_KEYS[@]} -gt 0 ]; then
-            echo "  ${GREEN}1. Reutilizar chave de migração existente (RECOMENDADO)${NC}"
+            echo -e "  ${GREEN}1. Reutilizar chave de migração existente (RECOMENDADO)${NC}"
             echo "  2. Criar nova chave SSH"
             echo "  3. Informar caminho de chave diferente"
         else

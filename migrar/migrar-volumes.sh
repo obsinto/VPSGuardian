@@ -7,14 +7,14 @@
 
 ### ========== CONFIGURAÇÃO ==========
 
-# Servidor de destino
-NEW_SERVER_IP=""
-NEW_SERVER_USER="root"
-NEW_SERVER_PORT="22"
+# Servidor de destino (preserva valores exportados pelo migrar-coolify.sh)
+NEW_SERVER_IP="${NEW_SERVER_IP:-}"
+NEW_SERVER_USER="${NEW_SERVER_USER:-root}"
+NEW_SERVER_PORT="${NEW_SERVER_PORT:-22}"
 
 # Autenticação SSH (escolher método: key ou password)
-SSH_AUTH_METHOD="" # Será definido interativamente (key ou password)
-SSH_PRIVATE_KEY_PATH="/root/.ssh/id_rsa"
+SSH_AUTH_METHOD="${SSH_AUTH_METHOD:-}" # Será definido interativamente (key ou password)
+SSH_PRIVATE_KEY_PATH="${SSH_PRIVATE_KEY_PATH:-/root/.ssh/id_rsa}"
 SSH_PASSWORD="" # Será solicitado se método password for escolhido
 
 # Diretórios
@@ -24,7 +24,7 @@ REMOTE_BACKUP_DIR="/root/volume-backups-received"
 ### ========== NÃO EDITAR ABAIXO DESTA LINHA ==========
 
 LOG_PREFIX="[ Volume Migration Agent ]"
-CONTROL_SOCKET="/tmp/ssh_mux_volumes_$$"
+CONTROL_SOCKET="${CONTROL_SOCKET:-/tmp/ssh_mux_volumes_$$}"
 
 # Criar diretório de logs
 LOG_DIR="$(pwd)/volume-migration-logs"

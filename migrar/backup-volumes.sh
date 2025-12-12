@@ -67,11 +67,11 @@ create_batch_metadata() {
 
     cat > "$metadata_file" <<EOF
 BATCH_ID=$batch_id
-CREATED=$(date '+%Y-%m-%d %H:%M:%S')
+CREATED="$(date '+%Y-%m-%d %H:%M:%S')"
 TOTAL_VOLUMES=$volume_count
 SUCCESSFUL_BACKUPS=$success_count
 HOSTNAME=$(hostname)
-DOCKER_VERSION=$(docker --version 2>/dev/null || echo "N/A")
+DOCKER_VERSION="$(docker --version 2>/dev/null || echo "N/A")"
 EOF
 
     log_info "Batch metadata criado: .batch-${batch_id}.meta"
