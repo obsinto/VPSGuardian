@@ -417,7 +417,15 @@ for i in "${!BACKUPS[@]}"; do
     BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
     VOLUME_NAME=$(basename "$BACKUP_FILE" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
-
+    
+if [[ "$VOLUME_NAME" == "coolify-db" ]] || \
+	       [[ "$VOLUME_NAME" == "coolify-redis" ]] || \
+	       [[ "$VOLUME_NAME" == "coolify-data" ]] || \
+	       [[ "$VOLUME_NAME" == "coolify_db_data" ]]; then
+		# Pula silenciosamente este volume para não oferecer risco
+		continue 
+	    fi
+	    
     # Mostrar numeração começando de 1 (mais natural para usuário)
     echo "  [$((i+1))] $(basename $BACKUP_FILE)"
     echo "      Volume: $VOLUME_NAME"
@@ -478,6 +486,17 @@ for idx in $SELECTED_INDICES; do
     fi
 
     if [ $idx -ge 0 ] && [ $idx -lt ${#BACKUPS[@]} ]; then
+    # --- [INÍCIO] BLOCO DE SEGURANÇA QUE VOCÊ DEVE ADICIONAR ---
+        CHECK_NAME=$(basename "${BACKUPS[$idx]}" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
+        
+        if [[ "$CHECK_NAME" == "coolify-db" ]] || \
+           [[ "$CHECK_NAME" == "coolify-redis" ]] || \
+           [[ "$CHECK_NAME" == "coolify-data" ]] || \
+           [[ "$CHECK_NAME" == "coolify_db_data" ]]; then
+            log_warning "Volume de sistema detectado e ignorado: $CHECK_NAME"
+            continue
+        fi
+        
         SELECTED_BACKUPS+=("${BACKUPS[$idx]}")
         # Extrair nome do volume removendo -backup-TIMESTAMP.tar.gz
         VOLUME_NAME=$(basename "${BACKUPS[$idx]}" | sed 's/-backup-[0-9_]*\.tar\.gz$//')
