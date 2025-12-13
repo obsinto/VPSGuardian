@@ -349,94 +349,19 @@ log_info "Extracting backup to analyze..."
 # Isso garante que a pasta 'ssh-keys' seja extraída exatamente como está no backup
 tar -xzf "$BACKUP_FILE" -C "$TEMP_EXTRACT_DIR" 2>/dev/null
 
-# ==============================================================================
-# EXTRAÇÃO DE APP_KEY E APP_PREVIOUS_KEYS (CRÍTICO - FAZER ANTES DE LIMPAR!)
-# ==============================================================================
-log_info "🔍 Localizando chaves de criptografia no backup..."
-echo ""
-
-BACKUP_APP_KEY=""
-BACKUP_PREV_KEYS=""
-APP_KEY_LOCAL=""
-
-# 1. BUSCA INTELIGENTE: Procurar .env recursivamente no backup extraído
-FOUND_ENV_FILE=$(find "$TEMP_EXTRACT_DIR" -name ".env" -type f | head -n 1)
-
-if [ -n "$FOUND_ENV_FILE" ]; then
-    log_success "✅ Arquivo .env encontrado no backup!"
-    log_info "   Localização: ${FOUND_ENV_FILE#$TEMP_EXTRACT_DIR/}"
-    echo ""
-
-    BACKUP_APP_KEY=$(grep "^APP_KEY=" "$FOUND_ENV_FILE" | cut -d '=' -f2-)
-    BACKUP_PREV_KEYS=$(grep "^APP_PREVIOUS_KEYS=" "$FOUND_ENV_FILE" | cut -d '=' -f2-)
-
-    if [ -n "$BACKUP_APP_KEY" ]; then
-        log_success "✅ APP_KEY encontrado no backup"
-        log_info "   Preview: ${BACKUP_APP_KEY:0:20}..."
-    fi
-
-    if [ -n "$BACKUP_PREV_KEYS" ]; then
-        KEY_COUNT=$(echo "$BACKUP_PREV_KEYS" | tr ',' '\n' | wc -l)
-        log_success "✅ APP_PREVIOUS_KEYS encontrado ($KEY_COUNT chaves antigas)"
-    else
-        log_info "ℹ️  Nenhuma chave anterior (normal para primeira instalação)"
-    fi
-else
-    log_warning "⚠️  Arquivo .env não encontrado no backup extraído"
+# Obter APP_KEY do backup
+if [ -f "$TEMP_EXTRACT_DIR/.env" ]; then
+    APP_KEY=$(grep "^APP_KEY=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
+elif [ -f "$ENV_FILE" ]; then
+    APP_KEY=$(grep "^APP_KEY=" "$ENV_FILE" | cut -d '=' -f2-)
 fi
 
-# 2. FALLBACK: Tentar sistema local se backup falhou
-if [ -z "$BACKUP_APP_KEY" ]; then
-    log_info "Tentando fallback: chave do sistema local..."
-
-    if [ -f "$ENV_FILE" ]; then
-        APP_KEY_LOCAL=$(grep "^APP_KEY=" "$ENV_FILE" | cut -d '=' -f2-)
-
-        if [ -n "$APP_KEY_LOCAL" ]; then
-            log_warning "⚠️  Usando APP_KEY do sistema local como fallback"
-            log_info "   Preview: ${APP_KEY_LOCAL:0:20}..."
-            BACKUP_APP_KEY="$APP_KEY_LOCAL"
-
-            # Tentar pegar previous keys localmente também
-            PREV_KEYS_LOCAL=$(grep "^APP_PREVIOUS_KEYS=" "$ENV_FILE" | cut -d '=' -f2-)
-            if [ -n "$PREV_KEYS_LOCAL" ]; then
-                BACKUP_PREV_KEYS="$PREV_KEYS_LOCAL"
-            fi
-        fi
-    fi
+if [ -z "$APP_KEY" ]; then
+    log_error "APP_KEY not found in backup or current installation"
+    rm -rf "$TEMP_EXTRACT_DIR"
+    exit 1
 fi
-
-# 3. VALIDAÇÃO FINAL
-if [ -z "$BACKUP_APP_KEY" ]; then
-    log_error "❌ ERRO CRÍTICO: Nenhuma APP_KEY encontrada!"
-    log_error "Verificado em:"
-    log_error "  1. Backup extraído: $TEMP_EXTRACT_DIR"
-    log_error "  2. Sistema local: $ENV_FILE"
-    echo ""
-    log_error "Sem APP_KEY, dados criptografados no banco serão perdidos."
-    echo ""
-
-    if [ "$AUTO_MODE" = false ]; then
-        read -p "Deseja ABORTAR a migração? (S/n): " ABORT
-        ABORT=${ABORT:-S}
-        if [[ "$ABORT" =~ ^[Ss]$ ]]; then
-            rm -rf "$TEMP_EXTRACT_DIR"
-            exit 1
-        fi
-    else
-        rm -rf "$TEMP_EXTRACT_DIR"
-        exit 1
-    fi
-fi
-
-# Para compatibilidade com resto do script
-APP_KEY="$BACKUP_APP_KEY"
-
-log_success "✅ Chaves de criptografia preparadas para migração"
-echo ""
-# ==============================================================================
-# FIM DA EXTRAÇÃO DE CHAVES
-# ==============================================================================
+log_success "APP_KEY retrieved from backup."
 
 # Detectar versão do Coolify
 COOLIFY_IMAGE=$(docker ps --filter "name=coolify" --format '{{.Image}}' | grep coollabsio/coolify | head -n1)
@@ -1115,27 +1040,39 @@ fi
 
 ### ========== UPDATE APP_KEYS (ROTATION LOGIC) ==========
 log_section "Update APP_KEYS (Rotation)"
-log_info "⚠️ Aplicando rotação de chaves de criptografia..."
-log_info "Chaves já foram extraídas do backup anteriormente."
-echo ""
+log_info "⚠️ Preparando rotação de chaves de criptografia..."
 
-# DEBUG: Mostrar o que temos
-log_info "📊 Estado das chaves:"
-if [ -n "$BACKUP_APP_KEY" ]; then
-    log_success "  ✅ APP_KEY do backup: ${BACKUP_APP_KEY:0:20}..."
-else
-    log_error "  ❌ APP_KEY não encontrado"
+# Variáveis para armazenar as chaves encontradas
+BACKUP_APP_KEY=""
+BACKUP_PREV_KEYS=""
+
+# 1. Tentar ler do arquivo .env extraído
+if [ -f "$TEMP_EXTRACT_DIR/.env" ]; then
+    BACKUP_APP_KEY=$(grep "^APP_KEY=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
+    BACKUP_PREV_KEYS=$(grep "^APP_PREVIOUS_KEYS=" "$TEMP_EXTRACT_DIR/.env" | cut -d '=' -f2-)
 fi
 
-if [ -n "$BACKUP_PREV_KEYS" ]; then
-    KEY_COUNT=$(echo "$BACKUP_PREV_KEYS" | tr ',' '\n' | wc -l)
-    log_info "  ✅ APP_PREVIOUS_KEYS: $KEY_COUNT chaves antigas"
-else
-    log_info "  ℹ️  Sem chaves anteriores"
+# 2. Fallback: Tentar ler direto do tar.gz se a extração falhou
+if [ -z "$BACKUP_APP_KEY" ]; then
+    BACKUP_APP_KEY=$(tar -xzf "$BACKUP_FILE" -O ".env" 2>/dev/null | grep "^APP_KEY=" | cut -d '=' -f2-)
+    BACKUP_PREV_KEYS=$(tar -xzf "$BACKUP_FILE" -O ".env" 2>/dev/null | grep "^APP_PREVIOUS_KEYS=" | cut -d '=' -f2-)
 fi
-echo ""
 
-# Construir a String Final de Chaves Anteriores (A SOMA)
+# 3. Validação Crítica
+if [ -z "$BACKUP_APP_KEY" ]; then
+    log_error "❌ ERRO CRÍTICO: Não foi possível encontrar a APP_KEY no backup."
+    log_error "Sem ela, os dados do banco não poderão ser descriptografados."
+    read -p "Deseja ABORTAR a migração? (S/n): " ABORT
+    ABORT=${ABORT:-S}
+    if [[ "$ABORT" =~ ^[Ss]$ ]]; then
+        rm -rf "$TEMP_EXTRACT_DIR"
+        cleanup_and_exit 1
+    fi
+else
+    log_success "✅ APP_KEY antiga encontrada."
+fi
+
+# 4. Construir a String Final de Chaves Anteriores (A SOMA)
 # A lógica é: Nova_Previous = (APP_KEY_Antiga) + "," + (APP_PREVIOUS_KEYS_Antiga)
 
 KEYS_TO_MIGRATE="$BACKUP_APP_KEY"
