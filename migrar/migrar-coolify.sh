@@ -1114,15 +1114,14 @@ else
 fi
 
 ### ========== UPDATE APP_KEYS (ROTATION LOGIC) ==========
-log_section "Update APP_KEYS (Rotation)"
-log_info "⚠️ Aplicando rotação de chaves de criptografia..."
+log_section "Update APP_KEYS"
 log_info "Chaves já foram extraídas do backup anteriormente."
 echo ""
 
 # DEBUG: Mostrar o que temos
-log_info "📊 Estado das chaves:"
+log_info "📊 Estado das chaves do backup:"
 if [ -n "$BACKUP_APP_KEY" ]; then
-    log_success "  ✅ APP_KEY do backup: ${BACKUP_APP_KEY:0:20}..."
+    log_success "  ✅ APP_KEY: ${BACKUP_APP_KEY:0:20}..."
 else
     log_error "  ❌ APP_KEY não encontrado"
 fi
@@ -1135,44 +1134,158 @@ else
 fi
 echo ""
 
-# Construir a String Final de Chaves Anteriores (A SOMA)
-# A lógica é: Nova_Previous = (APP_KEY_Antiga) + "," + (APP_PREVIOUS_KEYS_Antiga)
+# ==============================================================================
+# ESCOLHA DA ESTRATÉGIA DE CHAVES
+# ==============================================================================
 
-KEYS_TO_MIGRATE="$BACKUP_APP_KEY"
+KEY_STRATEGY=""
 
-if [ -n "$BACKUP_PREV_KEYS" ]; then
-    log_info "ℹ️ Histórico de chaves anteriores detectado."
-    # Adiciona as chaves antigas à lista, separadas por vírgula
-    KEYS_TO_MIGRATE="${KEYS_TO_MIGRATE},${BACKUP_PREV_KEYS}"
+if [ "$AUTO_MODE" = false ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Estratégia de Chaves de Criptografia"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Escolha como tratar a APP_KEY na migração:"
+    echo ""
+    echo "  ${GREEN}1. Manter mesma chave${NC} (Recomendado para migrações)"
+    echo "     • Servidor novo usa a MESMA APP_KEY do backup"
+    echo "     • Mantém APP_PREVIOUS_KEYS (se tiver)"
+    echo "     • Sem acumulação de chaves"
+    echo "     • Mais simples e direto"
+    echo ""
+    echo "  ${YELLOW}2. Gerar nova chave${NC} (Rotação de segurança)"
+    echo "     • Servidor novo gera NOVA APP_KEY"
+    echo "     • Chave antiga vai para APP_PREVIOUS_KEYS"
+    echo "     • Acumula chaves a cada migração"
+    echo "     • Recomendado se houver suspeita de comprometimento"
+    echo ""
+    read -p "Escolha (1-2, padrão=1): " KEY_STRATEGY
+    KEY_STRATEGY=${KEY_STRATEGY:-1}
+    echo ""
+else
+    # Modo automático: usar variável de ambiente ou padrão
+    KEY_STRATEGY="${KEY_ROTATION_MODE:-1}"
+    log_info "Modo automático: Estratégia $KEY_STRATEGY"
 fi
 
-log_info "🔑 String de chaves para migração preparada."
-# Remover espaços em branco que possam ter vindo junto
-KEYS_TO_MIGRATE=$(echo "$KEYS_TO_MIGRATE" | tr -d ' ')
+# ==============================================================================
+# APLICAR ESTRATÉGIA ESCOLHIDA
+# ==============================================================================
 
-# 5. Aplicar no Novo Servidor
 log_info "Parando containers para aplicação segura..."
 ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "docker stop \$(docker ps -q) 2>/dev/null || true"
 
-log_info "Injetando chaves no servidor novo..."
+if [ "$KEY_STRATEGY" = "1" ]; then
+    # ========================================
+    # ESTRATÉGIA 1: MANTER MESMA CHAVE
+    # ========================================
+    log_section "Aplicando Estratégia: Manter Mesma Chave"
+    log_info "✅ Servidor novo usará a MESMA APP_KEY do backup"
+    echo ""
 
-# Usamos um script remoto para inserir a linha APP_PREVIOUS_KEYS corretamente
-ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "bash -s" << EOF
-    mkdir -p /data/coolify/source
-    ENV_FILE="/data/coolify/source/.env"
-    touch "\$ENV_FILE"
+    # Preparar chaves
+    APP_KEY_TO_SET="$BACKUP_APP_KEY"
+    PREV_KEYS_TO_SET="$BACKUP_PREV_KEYS"
 
-    # Se a linha já existe, removemos para evitar duplicidade e escrevemos a nova
-    sed -i '/^APP_PREVIOUS_KEYS=/d' "\$ENV_FILE"
-    
-    # Adiciona a linha completa com todas as chaves (Atual + Antigas)
-    echo "APP_PREVIOUS_KEYS=$KEYS_TO_MIGRATE" >> "\$ENV_FILE"
-    
-    # Limpeza final
-    sed -i '/^$/d' "\$ENV_FILE"
+    log_info "📋 Configuração que será aplicada:"
+    log_info "   APP_KEY: ${APP_KEY_TO_SET:0:20}... (mesma do backup)"
+
+    if [ -n "$PREV_KEYS_TO_SET" ]; then
+        PREV_COUNT=$(echo "$PREV_KEYS_TO_SET" | tr ',' '\n' | wc -l)
+        log_info "   APP_PREVIOUS_KEYS: $PREV_COUNT chaves (do backup)"
+    else
+        log_info "   APP_PREVIOUS_KEYS: (vazio)"
+    fi
+    echo ""
+
+    # Aplicar no servidor novo
+    log_info "Aplicando chaves no servidor novo..."
+
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "bash -s" << EOF
+        mkdir -p /data/coolify/source
+        ENV_FILE="/data/coolify/source/.env"
+        touch "\$ENV_FILE"
+
+        # Remover linhas antigas
+        sed -i '/^APP_KEY=/d' "\$ENV_FILE"
+        sed -i '/^APP_PREVIOUS_KEYS=/d' "\$ENV_FILE"
+
+        # Aplicar APP_KEY do backup (mesma)
+        echo "APP_KEY=$APP_KEY_TO_SET" >> "\$ENV_FILE"
+
+        # Aplicar APP_PREVIOUS_KEYS se tiver
+        if [ -n "$PREV_KEYS_TO_SET" ]; then
+            echo "APP_PREVIOUS_KEYS=$PREV_KEYS_TO_SET" >> "\$ENV_FILE"
+        fi
+
+        # Limpeza
+        sed -i '/^$/d' "\$ENV_FILE"
 EOF
 
-check_success $? "Chaves de criptografia migradas com sucesso."
+    check_success $? "Mesma chave aplicada com sucesso"
+
+    log_success "✅ Configuração aplicada:"
+    log_success "   • APP_KEY mantida (sem mudança)"
+    if [ -n "$PREV_KEYS_TO_SET" ]; then
+        log_success "   • APP_PREVIOUS_KEYS preservadas ($PREV_COUNT chaves)"
+    fi
+    log_success "   • SEM acumulação de chaves novas"
+
+else
+    # ========================================
+    # ESTRATÉGIA 2: ROTAÇÃO (GERAR NOVA)
+    # ========================================
+    log_section "Aplicando Estratégia: Rotação de Chaves"
+    log_info "⚠️  Servidor novo gerará NOVA APP_KEY"
+    log_info "⚠️  Chave antiga será adicionada em APP_PREVIOUS_KEYS"
+    echo ""
+
+    # Construir string de rotação
+    KEYS_TO_MIGRATE="$BACKUP_APP_KEY"
+
+    if [ -n "$BACKUP_PREV_KEYS" ]; then
+        log_info "ℹ️  Histórico de chaves anteriores detectado"
+        KEYS_TO_MIGRATE="${KEYS_TO_MIGRATE},${BACKUP_PREV_KEYS}"
+    fi
+
+    # Remover espaços
+    KEYS_TO_MIGRATE=$(echo "$KEYS_TO_MIGRATE" | tr -d ' ')
+
+    # Contar total de chaves
+    TOTAL_KEYS=$(echo "$KEYS_TO_MIGRATE" | tr ',' '\n' | wc -l)
+
+    log_info "📋 Configuração que será aplicada:"
+    log_info "   APP_KEY: (será gerada pelo Coolify no Final Install)"
+    log_info "   APP_PREVIOUS_KEYS: $TOTAL_KEYS chaves"
+    echo ""
+
+    # Aplicar no servidor novo
+    log_info "Aplicando rotação de chaves..."
+
+    ssh -S "$CONTROL_SOCKET" "$NEW_SERVER_USER@$NEW_SERVER_IP" "bash -s" << EOF
+        mkdir -p /data/coolify/source
+        ENV_FILE="/data/coolify/source/.env"
+        touch "\$ENV_FILE"
+
+        # Remover linha antiga de APP_PREVIOUS_KEYS
+        sed -i '/^APP_PREVIOUS_KEYS=/d' "\$ENV_FILE"
+
+        # Adicionar todas as chaves (atual + antigas)
+        echo "APP_PREVIOUS_KEYS=$KEYS_TO_MIGRATE" >> "\$ENV_FILE"
+
+        # Limpeza
+        sed -i '/^$/d' "\$ENV_FILE"
+
+        # NOTA: APP_KEY será gerada pelo Coolify no Final Install
+EOF
+
+    check_success $? "Rotação de chaves configurada com sucesso"
+
+    log_success "✅ Configuração aplicada:"
+    log_success "   • Nova APP_KEY será gerada pelo Coolify"
+    log_success "   • APP_PREVIOUS_KEYS: $TOTAL_KEYS chaves preservadas"
+    log_warning "   ⚠️  Cada migração acumulará +1 chave em APP_PREVIOUS_KEYS"
+fi
 
 echo ""
 

@@ -1,0 +1,47 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                   EXEMPLO DURANTE MIGRAÇÃO                       ║
+╚══════════════════════════════════════════════════════════════════╝
+
+=== UPDATE APP_KEYS ===
+
+📊 Estado das chaves do backup:
+  ✅ APP_KEY: base64:/IXr1fLYwivzGC...
+  ✅ APP_PREVIOUS_KEYS: 2 chaves antigas
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Estratégia de Chaves de Criptografia
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Escolha como tratar a APP_KEY na migração:
+
+  1. Manter mesma chave (Recomendado para migrações)
+     • Servidor novo usa a MESMA APP_KEY do backup
+     • Mantém APP_PREVIOUS_KEYS (se tiver)
+     • Sem acumulação de chaves
+     • Mais simples e direto
+
+  2. Gerar nova chave (Rotação de segurança)
+     • Servidor novo gera NOVA APP_KEY
+     • Chave antiga vai para APP_PREVIOUS_KEYS
+     • Acumula chaves a cada migração
+     • Recomendado se houver suspeita de comprometimento
+
+Escolha (1-2, padrão=1): 1  ← VOCÊ DIGITA AQUI
+
+=== Aplicando Estratégia: Manter Mesma Chave ===
+
+✅ Servidor novo usará a MESMA APP_KEY do backup
+
+📋 Configuração que será aplicada:
+   APP_KEY: base64:/IXr1fLYwivzGC... (mesma do backup)
+   APP_PREVIOUS_KEYS: 2 chaves (do backup)
+
+[✓] Mesma chave aplicada com sucesso
+
+✅ Configuração aplicada:
+   • APP_KEY mantida (sem mudança)
+   • APP_PREVIOUS_KEYS preservadas (2 chaves)
+   • SEM acumulação de chaves novas
+
+=== FINAL INSTALL ===
+...
