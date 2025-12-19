@@ -6,8 +6,12 @@
 # Versão: 1.0
 ################################################################################
 
-# Diretório base do script (detecta automaticamente)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Diretório base do script (resolve links simbólicos)
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if [ -L "$SCRIPT_PATH" ]; then
+    SCRIPT_PATH="$(readlink -f "$SCRIPT_PATH")"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 # Cores
 RED='\033[0;31m'

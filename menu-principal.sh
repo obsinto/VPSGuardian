@@ -17,8 +17,14 @@ WHITE='\033[1;37m'
 GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
-# Diretório base
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Diretório base (resolve links simbólicos para encontrar o diretório real)
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+# Se for link simbólico, resolve para o caminho real
+if [ -L "$SCRIPT_PATH" ]; then
+    SCRIPT_PATH="$(readlink -f "$SCRIPT_PATH")"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+
 LOG_DIR="/var/log/manutencao"
 LOG_FILE="$LOG_DIR/menu-execucoes.log"
 
