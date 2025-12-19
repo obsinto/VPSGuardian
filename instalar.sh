@@ -29,6 +29,19 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DETECÇÃO AUTOMÁTICA DE DIRETÓRIOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Detectar diretório de origem (onde está o repositório clonado)
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_NAME="$(basename "$SOURCE_DIR")"
+
+# Padrões dinâmicos baseados no nome da pasta atual
+DEFAULT_INSTALL_DIR="/opt/$SOURCE_NAME"
+DEFAULT_BACKUP_DIR="/var/backups/$SOURCE_NAME"
+DEFAULT_LOG_DIR="/var/log/$SOURCE_NAME"
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # FUNÇÕES DE LOG
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -78,18 +91,30 @@ verify_directory() {
 # CARREGAMENTO DE CONFIGURAÇÕES ANTERIORES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-INSTALL_CONFIG="/opt/vpsguardian/.install.conf"
 INSTALL_ROOT=""
 BACKUP_ROOT=""
 LOG_ROOT=""
 USE_SYMLINKS=""
 INSTALLED=false
+INSTALL_CONFIG=""
 
 load_previous_config() {
-    if [ -f "$INSTALL_CONFIG" ]; then
-        source "$INSTALL_CONFIG"
-        INSTALLED=true
-    fi
+    # Procurar arquivo de configuração em locais possíveis
+    local possible_configs=(
+        "/opt/vpsguardian/.install.conf"
+        "/opt/vpsguardian-src/.install.conf"
+        "$DEFAULT_INSTALL_DIR/.install.conf"
+        "/etc/vpsguardian/install.conf"
+    )
+
+    for config in "${possible_configs[@]}"; do
+        if [ -f "$config" ]; then
+            INSTALL_CONFIG="$config"
+            source "$INSTALL_CONFIG"
+            INSTALLED=true
+            return
+        fi
+    done
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -162,22 +187,25 @@ show_current_config() {
 interactive_configuration() {
     log_section "CONFIGURAÇÃO INTERATIVA"
 
+    log_info "Nome da pasta de origem detectado: $SOURCE_NAME"
+    echo ""
+
     # Diretório de Instalação
-    log_info "Diretório de instalação (padrão: /opt/vpsguardian)"
-    read -p "Caminho: " -i "/opt/vpsguardian" -e INSTALL_ROOT
-    INSTALL_ROOT="${INSTALL_ROOT:-/opt/vpsguardian}"
+    log_info "Diretório de instalação (padrão: $DEFAULT_INSTALL_DIR)"
+    read -p "Caminho: " -i "$DEFAULT_INSTALL_DIR" -e INSTALL_ROOT
+    INSTALL_ROOT="${INSTALL_ROOT:-$DEFAULT_INSTALL_DIR}"
 
     # Diretório de Backups
     log_info ""
-    log_info "Diretório de backups (padrão: /var/backups/vpsguardian)"
-    read -p "Caminho: " -i "/var/backups/vpsguardian" -e BACKUP_ROOT
-    BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/vpsguardian}"
+    log_info "Diretório de backups (padrão: $DEFAULT_BACKUP_DIR)"
+    read -p "Caminho: " -i "$DEFAULT_BACKUP_DIR" -e BACKUP_ROOT
+    BACKUP_ROOT="${BACKUP_ROOT:-$DEFAULT_BACKUP_DIR}"
 
     # Diretório de Logs
     log_info ""
-    log_info "Diretório de logs (padrão: /var/log/vpsguardian)"
-    read -p "Caminho: " -i "/var/log/vpsguardian" -e LOG_ROOT
-    LOG_ROOT="${LOG_ROOT:-/var/log/vpsguardian}"
+    log_info "Diretório de logs (padrão: $DEFAULT_LOG_DIR)"
+    read -p "Caminho: " -i "$DEFAULT_LOG_DIR" -e LOG_ROOT
+    LOG_ROOT="${LOG_ROOT:-$DEFAULT_LOG_DIR}"
 
     # Tipo de links
     log_info ""
@@ -193,6 +221,9 @@ interactive_configuration() {
 
 validate_paths() {
     log_section "VALIDAÇÃO DE CAMINHOS"
+
+    # Definir INSTALL_CONFIG baseado no INSTALL_ROOT escolhido
+    INSTALL_CONFIG="$INSTALL_ROOT/.install.conf"
 
     # Validar que os caminhos são diferentes
     if [ "$INSTALL_ROOT" = "$BACKUP_ROOT" ] || [ "$INSTALL_ROOT" = "$LOG_ROOT" ]; then
@@ -353,9 +384,16 @@ create_global_commands() {
     cat > /usr/local/bin/vps-guardian << 'WRAPPER_EOF'
 #!/bin/bash
 
-# Determinar diretório de configuração
-INSTALL_CONFIG="/opt/vpsguardian/.install.conf"
-if [ ! -f "$INSTALL_CONFIG" ]; then
+# Procurar arquivo de configuração em locais possíveis
+INSTALL_CONFIG=""
+for config in "/opt/vpsguardian/.install.conf" "/opt/vpsguardian-src/.install.conf" "/opt/"*"/.install.conf" "/etc/vpsguardian/install.conf"; do
+    if [ -f "$config" ]; then
+        INSTALL_CONFIG="$config"
+        break
+    fi
+done
+
+if [ -z "$INSTALL_CONFIG" ]; then
     echo "❌ Erro: VPS Guardian não está instalado"
     echo "Execute: sudo ./instalar.sh"
     exit 1
