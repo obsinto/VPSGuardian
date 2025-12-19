@@ -235,7 +235,10 @@ show_main_menu() {
     echo -e "  ${GREEN}6${NC} → 📚 Documentação"
     echo -e "       ${GRAY}(Guias e manuais de uso)${NC}"
     echo ""
-    echo -e "  ${YELLOW}7${NC} → 📜 Ver Logs de Execução"
+    echo -e "  ${GREEN}7${NC} → 📓 Obsidian"
+    echo -e "       ${GRAY}(Backup GitHub e sincronização Syncthing)${NC}"
+    echo ""
+    echo -e "  ${YELLOW}8${NC} → 📜 Ver Logs de Execução"
     echo -e "       ${GRAY}(Histórico de operações realizadas)${NC}"
     echo ""
     echo -e "  ${RED}0${NC} → 🚪 Sair"
@@ -390,6 +393,30 @@ show_config_menu() {
     echo -e "  ${GREEN}5${NC} → 📋 Mostrar Configurações Atuais"
     echo -e "       ${GRAY}(Cron jobs, firewall, variáveis)${NC}"
     echo -e "       ${GRAY}(Visualização completa do sistema)${NC}"
+    echo ""
+    echo -e "  ${RED}0${NC} → ↩️  Voltar ao Menu Principal"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -ne "${WHITE}Escolha uma opção: ${NC}"
+}
+
+# Menu Obsidian
+show_obsidian_menu() {
+    print_header
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}📓 OBSIDIAN${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${GREEN}1${NC} → 📤 Backup com GitHub"
+    echo -e "       ${GRAY}(Fazer commit e push automático do vault)${NC}"
+    echo -e "       ${GRAY}(Configurar repositório Git e GitHub)${NC}"
+    echo ""
+    echo -e "  ${GREEN}2${NC} → 🔄 Instalar e Configurar Syncthing"
+    echo -e "       ${GRAY}(Sincronização em tempo real entre dispositivos)${NC}"
+    echo -e "       ${GRAY}(Com Cloudflare Zero Trust Tunnel)${NC}"
+    echo ""
+    echo -e "  ${YELLOW}3${NC} → 📊 Status dos Serviços"
+    echo -e "       ${GRAY}(Verificar Git e Syncthing)${NC}"
     echo ""
     echo -e "  ${RED}0${NC} → ↩️  Voltar ao Menu Principal"
     echo ""
@@ -739,6 +766,85 @@ handle_config_menu() {
     done
 }
 
+# Obsidian
+handle_obsidian_menu() {
+    while true; do
+        show_obsidian_menu
+        read -r option
+
+        case $option in
+            1)
+                # Backup com GitHub
+                if confirm "Executar backup do Obsidian para GitHub?"; then
+                    run_script "$SCRIPT_DIR/obsidian/backup-github.sh" "Backup Obsidian GitHub"
+                fi
+                ;;
+            2)
+                # Instalar Syncthing
+                if confirm "Instalar e configurar Syncthing?"; then
+                    run_script "$SCRIPT_DIR/obsidian/instalar-syncthing.sh" "Instalar Syncthing"
+                fi
+                ;;
+            3)
+                # Status dos serviços
+                clear_screen
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                echo -e "${WHITE}📊 Status dos Serviços Obsidian${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                echo ""
+
+                # Verificar Git
+                echo -e "${MAGENTA}▶ Git:${NC}"
+                if command -v git &> /dev/null; then
+                    echo -e "${GREEN}✓ Git instalado${NC}"
+                    git --version
+                    echo ""
+                    if [ -d "/root/obsidian-vault/.git" ]; then
+                        echo -e "${GREEN}✓ Vault configurado como repositório Git${NC}"
+                        echo -e "${GRAY}Localização: /root/obsidian-vault${NC}"
+                        cd /root/obsidian-vault 2>/dev/null && {
+                            echo -e "${GRAY}Remote: $(git remote get-url origin 2>/dev/null || echo 'Não configurado')${NC}"
+                            echo -e "${GRAY}Branch: $(git branch --show-current 2>/dev/null || echo 'N/A')${NC}"
+                            echo -e "${GRAY}Último commit: $(git log -1 --format='%h - %s (%ar)' 2>/dev/null || echo 'N/A')${NC}"
+                        }
+                    else
+                        echo -e "${YELLOW}⚠ Vault não é um repositório Git${NC}"
+                    fi
+                else
+                    echo -e "${RED}✗ Git não instalado${NC}"
+                fi
+                echo ""
+
+                # Verificar Syncthing
+                echo -e "${MAGENTA}▶ Syncthing:${NC}"
+                if command -v syncthing &> /dev/null; then
+                    echo -e "${GREEN}✓ Syncthing instalado${NC}"
+                    syncthing --version | head -1
+                    echo ""
+                    if systemctl is-active --quiet syncthing@root; then
+                        echo -e "${GREEN}✓ Serviço rodando${NC}"
+                        systemctl status syncthing@root --no-pager | head -5
+                    else
+                        echo -e "${RED}✗ Serviço parado${NC}"
+                    fi
+                else
+                    echo -e "${YELLOW}⚠ Syncthing não instalado${NC}"
+                fi
+                echo ""
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+                pause
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Opção inválida!${NC}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 # Documentação
 show_documentation() {
     clear_screen
@@ -844,6 +950,9 @@ main() {
                 show_documentation
                 ;;
             7)
+                handle_obsidian_menu
+                ;;
+            8)
                 show_logs
                 ;;
             0)
