@@ -6,6 +6,15 @@
 # Versão: 1.0
 ################################################################################
 
+# Diretório base do script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Carregar configurações
+CONFIG_FILE="$SCRIPT_DIR/../config/config.env"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
 # Cores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,10 +22,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
+GRAY='\033[0;90m'
 NC='\033[0m'
 
-# Configurações
-VAULT_DIR="/root/obsidian-vault"
+# Configurações (usa variável do config.env ou padrão)
+VAULT_DIR="${OBSIDIAN_VAULT_PATH:-/root/obsidian-vault}"
 LOG_FILE="/var/log/manutencao/obsidian-backup.log"
 
 # Criar diretório de logs se não existir
@@ -35,6 +45,9 @@ print_header() {
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}📓 BACKUP OBSIDIAN COM GITHUB${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${GRAY}Vault: $VAULT_DIR${NC}"
+    echo -e "${GRAY}Para alterar, edite: $CONFIG_FILE${NC}"
     echo ""
 }
 

@@ -793,16 +793,27 @@ handle_obsidian_menu() {
                 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
                 echo ""
 
+                # Carregar configuração para pegar o vault path
+                OBSIDIAN_VAULT_PATH="/root/obsidian-vault"  # padrão
+                if [ -f "$SCRIPT_DIR/config/config.env" ]; then
+                    source "$SCRIPT_DIR/config/config.env"
+                fi
+
+                echo -e "${MAGENTA}▶ Configuração:${NC}"
+                echo -e "${GRAY}Vault Path: ${WHITE}$OBSIDIAN_VAULT_PATH${NC}"
+                echo -e "${GRAY}Config File: ${WHITE}$SCRIPT_DIR/config/config.env${NC}"
+                echo ""
+
                 # Verificar Git
                 echo -e "${MAGENTA}▶ Git:${NC}"
                 if command -v git &> /dev/null; then
                     echo -e "${GREEN}✓ Git instalado${NC}"
                     git --version
                     echo ""
-                    if [ -d "/root/obsidian-vault/.git" ]; then
+                    if [ -d "$OBSIDIAN_VAULT_PATH/.git" ]; then
                         echo -e "${GREEN}✓ Vault configurado como repositório Git${NC}"
-                        echo -e "${GRAY}Localização: /root/obsidian-vault${NC}"
-                        cd /root/obsidian-vault 2>/dev/null && {
+                        echo -e "${GRAY}Localização: $OBSIDIAN_VAULT_PATH${NC}"
+                        cd "$OBSIDIAN_VAULT_PATH" 2>/dev/null && {
                             echo -e "${GRAY}Remote: $(git remote get-url origin 2>/dev/null || echo 'Não configurado')${NC}"
                             echo -e "${GRAY}Branch: $(git branch --show-current 2>/dev/null || echo 'N/A')${NC}"
                             echo -e "${GRAY}Último commit: $(git log -1 --format='%h - %s (%ar)' 2>/dev/null || echo 'N/A')${NC}"

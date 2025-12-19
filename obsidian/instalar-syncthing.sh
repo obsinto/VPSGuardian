@@ -6,6 +6,15 @@
 # Versão: 1.0
 ################################################################################
 
+# Diretório base do script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Carregar configurações
+CONFIG_FILE="$SCRIPT_DIR/../config/config.env"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
 # Cores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -16,8 +25,8 @@ WHITE='\033[1;37m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 
-# Configurações
-VAULT_DIR="/root/obsidian-vault"
+# Configurações (usa variável do config.env ou padrão)
+VAULT_DIR="${OBSIDIAN_VAULT_PATH:-/root/obsidian-vault}"
 CONFIG_DIR="/root/.local/state/syncthing"
 LOG_FILE="/var/log/manutencao/syncthing-install.log"
 
@@ -41,6 +50,9 @@ print_header() {
     echo -e "${CYAN}║              Sincronização do Obsidian com VPS                   ║${NC}"
     echo -e "${CYAN}║                                                                  ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GRAY}Vault: $VAULT_DIR${NC}"
+    echo -e "${GRAY}Para alterar, edite: $CONFIG_FILE${NC}"
     echo ""
 }
 
