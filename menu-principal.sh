@@ -415,8 +415,11 @@ show_obsidian_menu() {
     echo -e "       ${GRAY}(Sincronização em tempo real entre dispositivos)${NC}"
     echo -e "       ${GRAY}(Com Cloudflare Zero Trust Tunnel)${NC}"
     echo ""
-    echo -e "  ${YELLOW}3${NC} → 📊 Status dos Serviços"
-    echo -e "       ${GRAY}(Verificar Git e Syncthing)${NC}"
+    echo -e "  ${GREEN}3${NC} → ⏰ Configurar Backup Automático (Cron)"
+    echo -e "       ${GRAY}(Agendar backups periódicos para GitHub)${NC}"
+    echo ""
+    echo -e "  ${YELLOW}4${NC} → 📊 Status dos Serviços"
+    echo -e "       ${GRAY}(Verificar Git, Syncthing e Cron)${NC}"
     echo ""
     echo -e "  ${RED}0${NC} → ↩️  Voltar ao Menu Principal"
     echo ""
@@ -786,6 +789,12 @@ handle_obsidian_menu() {
                 fi
                 ;;
             3)
+                # Configurar Cron
+                if confirm "Configurar backup automático com cron?"; then
+                    run_script "$SCRIPT_DIR/obsidian/configurar-cron-backup.sh" "Configurar Backup Automático"
+                fi
+                ;;
+            4)
                 # Status dos serviços
                 clear_screen
                 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
@@ -840,6 +849,19 @@ handle_obsidian_menu() {
                     fi
                 else
                     echo -e "${YELLOW}⚠ Syncthing não instalado${NC}"
+                fi
+                echo ""
+
+                # Verificar Cron
+                echo -e "${MAGENTA}▶ Backup Automático (Cron):${NC}"
+                if crontab -l 2>/dev/null | grep -q "obsidian\|backup-github.sh"; then
+                    echo -e "${GREEN}✓ Cron configurado${NC}"
+                    echo ""
+                    echo -e "${GRAY}Jobs agendados:${NC}"
+                    crontab -l 2>/dev/null | grep -B 1 "obsidian\|backup-github.sh" | sed 's/^/  /'
+                else
+                    echo -e "${YELLOW}⚠ Nenhum backup automático configurado${NC}"
+                    echo -e "${GRAY}  Configure na opção 3 do menu${NC}"
                 fi
                 echo ""
                 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
