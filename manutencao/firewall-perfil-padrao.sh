@@ -264,3 +264,51 @@ echo "  • Ver status: sudo ufw status verbose"
 echo "  • Ver logs: sudo tail -f /var/log/ufw.log"
 echo "  • Modificar rede LAN: edite 192.168.31.0/24 neste script"
 echo ""
+
+# =========================================
+# CONFIGURAR TAILSCALE (OPCIONAL)
+# =========================================
+
+# Verificar se Tailscale está disponível
+if command -v tailscale &> /dev/null && ip link show tailscale0 &> /dev/null 2>&1; then
+    echo ""
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║                  Tailscale VPN Detectado                      ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo ""
+    log_success "Tailscale está instalado e rodando"
+    echo ""
+    read -p "Deseja adicionar regras do Tailscale ao firewall? (s/N): " -r
+    echo ""
+
+    if [[ $REPLY =~ ^[Ss]$ ]]; then
+        log_info "Adicionando regras do Tailscale ao UFW..."
+        echo ""
+
+        # Permitir todo tráfego de entrada na interface tailscale0
+        ufw allow in on tailscale0 comment 'Tailscale all' > /dev/null 2>&1
+        log_success "  ✓ Permitido todo tráfego de entrada em tailscale0"
+
+        # Permitir SSH na interface tailscale0
+        ufw allow in on tailscale0 to any port 22 comment 'Tailscale SSH' > /dev/null 2>&1
+        log_success "  ✓ Permitido SSH em tailscale0"
+
+        # Permitir todo tráfego de saída na interface tailscale0
+        ufw allow out on tailscale0 comment 'Tailscale out' > /dev/null 2>&1
+        log_success "  ✓ Permitido tráfego de saída em tailscale0"
+
+        echo ""
+        log_success "Regras do Tailscale configuradas com sucesso!"
+        echo ""
+        log_info "Você agora pode acessar este servidor via Tailscale VPN"
+        echo ""
+
+        # Mostrar status atualizado
+        echo "╔═══════════════════════════════════════════════════════════════╗"
+        echo "║              Status do Firewall (com Tailscale)              ║"
+        echo "╚═══════════════════════════════════════════════════════════════╝"
+        echo ""
+        ufw status numbered
+        echo ""
+    fi
+fi

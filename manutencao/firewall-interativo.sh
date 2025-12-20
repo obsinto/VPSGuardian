@@ -235,6 +235,182 @@ configure_lan() {
     done
 }
 
+# Verificar se Tailscale está instalado e interface existe
+check_tailscale() {
+    if ! command -v tailscale &> /dev/null; then
+        return 1
+    fi
+
+    if ! ip link show tailscale0 &> /dev/null; then
+        return 2
+    fi
+
+    return 0
+}
+
+# Verificar se regras Tailscale já existem
+check_tailscale_rules() {
+    if ufw status | grep -q "Anywhere on tailscale0"; then
+        return 0
+    fi
+    return 1
+}
+
+# Adicionar regras Tailscale ao firewall
+apply_tailscale_rules() {
+    log_section "Configurando Tailscale no Firewall"
+    echo ""
+
+    # Verificar se Tailscale está instalado
+    check_tailscale
+    local status=$?
+
+    if [ $status -eq 1 ]; then
+        log_error "Tailscale não está instalado"
+        echo ""
+        log_info "Para instalar o Tailscale, visite: https://tailscale.com/download"
+        return 1
+    elif [ $status -eq 2 ]; then
+        log_error "Interface tailscale0 não encontrada"
+        echo ""
+        log_info "Certifique-se de que o Tailscale está rodando: sudo tailscale up"
+        return 1
+    fi
+
+    # Verificar se regras já existem
+    if check_tailscale_rules; then
+        log_warning "Regras do Tailscale já estão configuradas"
+        echo ""
+        read -p "Deseja reconfigurar? (s/N): " response
+        if [[ ! "$response" =~ ^[Ss]$ ]]; then
+            return 0
+        fi
+
+        log_info "Removendo regras antigas do Tailscale..."
+        remove_tailscale_rules
+    fi
+
+    log_info "Adicionando regras do Tailscale ao UFW..."
+    echo ""
+
+    # Permitir todo tráfego de entrada na interface tailscale0
+    ufw allow in on tailscale0 comment 'Tailscale all' > /dev/null 2>&1
+    log_success "  ✓ Permitido todo tráfego de entrada em tailscale0"
+
+    # Permitir SSH na interface tailscale0
+    ufw allow in on tailscale0 to any port 22 comment 'Tailscale SSH' > /dev/null 2>&1
+    log_success "  ✓ Permitido SSH em tailscale0"
+
+    # Permitir todo tráfego de saída na interface tailscale0
+    ufw allow out on tailscale0 comment 'Tailscale out' > /dev/null 2>&1
+    log_success "  ✓ Permitido tráfego de saída em tailscale0"
+
+    echo ""
+    log_success "Regras do Tailscale configuradas com sucesso!"
+    echo ""
+    log_info "Você agora pode acessar este servidor via Tailscale VPN"
+
+    return 0
+}
+
+# Remover regras Tailscale do firewall
+remove_tailscale_rules() {
+    log_info "Removendo regras do Tailscale..."
+
+    # Obter números das regras relacionadas ao Tailscale
+    local rule_numbers=$(ufw status numbered | grep "tailscale0" | awk -F'[][]' '{print $2}' | sort -rn)
+
+    if [ -z "$rule_numbers" ]; then
+        log_warning "Nenhuma regra do Tailscale encontrada"
+        return 0
+    fi
+
+    # Remover regras (de trás para frente para não alterar os números)
+    while read -r num; do
+        ufw --force delete "$num" > /dev/null 2>&1
+    done <<< "$rule_numbers"
+
+    log_success "Regras do Tailscale removidas"
+    return 0
+}
+
+# Menu para gerenciar Tailscale
+manage_tailscale() {
+    while true; do
+        clear
+        log_section "Gerenciar Tailscale no Firewall"
+        echo ""
+
+        # Verificar status
+        check_tailscale
+        local status=$?
+
+        if [ $status -eq 1 ]; then
+            log_error "❌ Tailscale não instalado"
+            echo ""
+            log_info "Para instalar: https://tailscale.com/download"
+            echo ""
+            read -p "Pressione ENTER para voltar..."
+            return 1
+        elif [ $status -eq 2 ]; then
+            log_warning "⚠️  Tailscale instalado mas interface não encontrada"
+            echo ""
+            log_info "Execute: sudo tailscale up"
+        else
+            log_success "✓ Tailscale instalado e rodando"
+        fi
+
+        echo ""
+
+        # Verificar regras
+        if check_tailscale_rules; then
+            log_success "✓ Regras do Tailscale configuradas no UFW"
+            echo ""
+            echo "  [1] 🔄 Reconfigurar regras"
+            echo "  [2] ❌ Remover regras"
+        else
+            log_warning "⚠️  Regras do Tailscale não configuradas"
+            echo ""
+            echo "  [1] ➕ Adicionar regras do Tailscale"
+        fi
+
+        echo "  [3] 📊 Ver regras atuais"
+        echo "  [0] 🔙 Voltar"
+        echo ""
+
+        read -p "Selecione uma opção: " choice
+        echo ""
+
+        case $choice in
+            1)
+                apply_tailscale_rules
+                pause
+                ;;
+            2)
+                if check_tailscale_rules; then
+                    remove_tailscale_rules
+                    pause
+                else
+                    log_error "Opção inválida"
+                    sleep 2
+                fi
+                ;;
+            3)
+                ufw status numbered | grep -E "(tailscale0|Status:)"
+                echo ""
+                pause
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                log_error "Opção inválida"
+                sleep 2
+                ;;
+        esac
+    done
+}
+
 ################################################################################
 # APLICAR CONFIGURAÇÕES DE FIREWALL
 ################################################################################
@@ -274,6 +450,20 @@ apply_firewall_secure() {
 
     echo ""
     log_success "Modo SEGURO aplicado!"
+    echo ""
+
+    # Verificar se Tailscale está disponível e perguntar se quer adicionar regras
+    check_tailscale
+    local ts_status=$?
+    if [ $ts_status -eq 0 ]; then
+        echo ""
+        read -p "Deseja adicionar regras do Tailscale ao firewall? (s/N): " response
+        if [[ "$response" =~ ^[Ss]$ ]]; then
+            echo ""
+            apply_tailscale_rules
+        fi
+    fi
+
     echo ""
     log_warning "⚠️  IMPORTANTE:"
     echo "  • Porta 22 NÃO está exposta publicamente"
@@ -332,6 +522,20 @@ apply_firewall_hybrid() {
 
     echo ""
     log_success "Modo HÍBRIDO aplicado!"
+    echo ""
+
+    # Verificar se Tailscale está disponível e perguntar se quer adicionar regras
+    check_tailscale
+    local ts_status=$?
+    if [ $ts_status -eq 0 ]; then
+        echo ""
+        read -p "Deseja adicionar regras do Tailscale ao firewall? (s/N): " response
+        if [[ "$response" =~ ^[Ss]$ ]]; then
+            echo ""
+            apply_tailscale_rules
+        fi
+    fi
+
     echo ""
     log_warning "⚠️  IMPORTANTE:"
     echo "  • SSH disponível de: localhost + LAN + Docker + Whitelist IPs"
@@ -401,6 +605,20 @@ apply_firewall_basic() {
     echo ""
     log_success "Modo BÁSICO aplicado!"
     echo ""
+
+    # Verificar se Tailscale está disponível e perguntar se quer adicionar regras
+    check_tailscale
+    local ts_status=$?
+    if [ $ts_status -eq 0 ]; then
+        echo ""
+        read -p "Deseja adicionar regras do Tailscale ao firewall? (s/N): " response
+        if [[ "$response" =~ ^[Ss]$ ]]; then
+            echo ""
+            apply_tailscale_rules
+        fi
+    fi
+
+    echo ""
     log_warning "⚠️  RECOMENDAÇÕES:"
     echo "  • Configure fail2ban para proteção contra brute force"
     echo "  • Use chaves SSH (desabilite senha)"
@@ -445,10 +663,16 @@ EOF
     echo ""
 
     log_separator
+    log_section "Tailscale VPN"
+    echo ""
+    echo "  [8] 🔐 Gerenciar Tailscale no Firewall"
+    echo ""
+
+    log_separator
     log_section "Ferramentas"
     echo ""
-    echo "  [8] 📊 Ver status do firewall"
-    echo "  [9] 📜 Ver logs do firewall"
+    echo "  [9] 📊 Ver status do firewall"
+    echo "  [10] 📜 Ver logs do firewall"
     echo "  [0] 🚪 Sair"
     echo ""
 
@@ -524,9 +748,12 @@ main() {
                 pause
                 ;;
             8)
-                show_firewall_status
+                manage_tailscale
                 ;;
             9)
+                show_firewall_status
+                ;;
+            10)
                 show_firewall_logs
                 ;;
             0)

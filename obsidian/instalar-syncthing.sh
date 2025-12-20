@@ -67,6 +67,72 @@ pause() {
 }
 
 ################################################################################
+# FUNÇÕES TAILSCALE
+################################################################################
+
+check_tailscale_installed() {
+    command -v tailscale &> /dev/null
+}
+
+check_tailscale_running() {
+    ip link show tailscale0 &> /dev/null 2>&1
+}
+
+install_tailscale() {
+    echo -e "${BLUE}→ Baixando script de instalação do Tailscale...${NC}"
+    curl -fsSL https://tailscale.com/install.sh -o /tmp/tailscale-install.sh || {
+        echo -e "${RED}✗ Erro ao baixar script de instalação${NC}"
+        return 1
+    }
+    echo ""
+
+    echo -e "${BLUE}→ Executando instalação do Tailscale...${NC}"
+    bash /tmp/tailscale-install.sh || {
+        echo -e "${RED}✗ Erro ao instalar Tailscale${NC}"
+        return 1
+    }
+    rm -f /tmp/tailscale-install.sh
+    echo ""
+
+    echo -e "${GREEN}✓ Tailscale instalado com sucesso!${NC}"
+    return 0
+}
+
+configure_tailscale_firewall() {
+    echo -e "${BLUE}→ Verificando regras do firewall para Tailscale...${NC}"
+
+    # Verificar se UFW está instalado e ativo
+    if ! command -v ufw &> /dev/null; then
+        echo -e "${YELLOW}⚠ UFW não está instalado. Pulando configuração de firewall.${NC}"
+        return 0
+    fi
+
+    # Verificar se já existem regras do Tailscale
+    if ufw status | grep -q "tailscale0"; then
+        echo -e "${GREEN}✓ Regras do Tailscale já estão configuradas no firewall${NC}"
+        return 0
+    fi
+
+    echo -e "${BLUE}→ Adicionando regras do Tailscale ao UFW...${NC}"
+
+    # Permitir todo tráfego de entrada na interface tailscale0
+    ufw allow in on tailscale0 comment 'Tailscale all' > /dev/null 2>&1
+    echo -e "${GREEN}  ✓ Permitido tráfego de entrada em tailscale0${NC}"
+
+    # Permitir SSH na interface tailscale0
+    ufw allow in on tailscale0 to any port 22 comment 'Tailscale SSH' > /dev/null 2>&1
+    echo -e "${GREEN}  ✓ Permitido SSH em tailscale0${NC}"
+
+    # Permitir todo tráfego de saída na interface tailscale0
+    ufw allow out on tailscale0 comment 'Tailscale out' > /dev/null 2>&1
+    echo -e "${GREEN}  ✓ Permitido tráfego de saída em tailscale0${NC}"
+
+    echo ""
+    echo -e "${GREEN}✓ Regras do firewall configuradas!${NC}"
+    return 0
+}
+
+################################################################################
 # PASSO 1: INSTALAÇÃO DO SYNCTHING
 ################################################################################
 
@@ -232,12 +298,133 @@ configure_insecure_skip() {
 }
 
 ################################################################################
-# PASSO 4: CONFIGURAR SENHA
+# PASSO 4: CONFIGURAR TAILSCALE (OPCIONAL - RECOMENDADO)
+################################################################################
+
+configure_tailscale() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}PASSO 4: CONFIGURAR TAILSCALE VPN (RECOMENDADO)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    echo -e "${YELLOW}🔐 Por que usar Tailscale com Syncthing?${NC}"
+    echo ""
+    echo -e "${GREEN}✓ Evita relay público${NC} - Conexão direta entre dispositivos"
+    echo -e "${GREEN}✓ Maior segurança${NC} - Criptografia ponta a ponta (WireGuard)"
+    echo -e "${GREEN}✓ Melhor performance${NC} - Sem intermediários, menor latência"
+    echo -e "${GREEN}✓ Rede privada${NC} - Seus dispositivos se comunicam em VPN privada"
+    echo ""
+    echo -e "${GRAY}Sem Tailscale: Seus dispositivos podem usar servidores relay públicos${NC}"
+    echo -e "${GRAY}Com Tailscale: Conexão direta e criptografada entre seus dispositivos${NC}"
+    echo ""
+
+    # Verificar se já está instalado
+    if check_tailscale_installed; then
+        echo -e "${GREEN}✓ Tailscale já está instalado${NC}"
+        echo ""
+
+        # Verificar se está rodando
+        if check_tailscale_running; then
+            echo -e "${GREEN}✓ Tailscale está rodando${NC}"
+            echo ""
+
+            # Configurar firewall automaticamente
+            configure_tailscale_firewall
+            echo ""
+
+            log_message "INFO: Tailscale já configurado"
+            return 0
+        else
+            echo -e "${YELLOW}⚠ Tailscale instalado mas não está rodando${NC}"
+            echo ""
+            echo -e "${WHITE}Para ativar, execute:${NC}"
+            echo -e "${BLUE}sudo tailscale up${NC}"
+            echo ""
+
+            read -p "Deseja ativar o Tailscale agora? (s/N): " -r
+            if [[ $REPLY =~ ^[Ss]$ ]]; then
+                echo ""
+                echo -e "${BLUE}→ Ativando Tailscale...${NC}"
+                tailscale up || {
+                    echo -e "${RED}✗ Erro ao ativar Tailscale${NC}"
+                    echo -e "${YELLOW}Execute manualmente: sudo tailscale up${NC}"
+                    return 1
+                }
+                echo ""
+                echo -e "${GREEN}✓ Tailscale ativado!${NC}"
+                echo ""
+
+                # Configurar firewall
+                configure_tailscale_firewall
+            fi
+        fi
+        return 0
+    fi
+
+    # Perguntar se deseja instalar
+    echo ""
+    read -p "Deseja instalar o Tailscale? (S/n): " -r
+    echo ""
+
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo -e "${YELLOW}⚠ Pulando instalação do Tailscale${NC}"
+        echo -e "${GRAY}Você pode instalar depois se quiser: https://tailscale.com/download${NC}"
+        echo ""
+        log_message "INFO: Usuário optou por não instalar Tailscale"
+        return 0
+    fi
+
+    # Instalar Tailscale
+    install_tailscale || {
+        echo -e "${RED}✗ Erro ao instalar Tailscale${NC}"
+        echo -e "${YELLOW}Você pode tentar instalar manualmente depois${NC}"
+        return 1
+    }
+
+    # Ativar Tailscale
+    echo -e "${BLUE}→ Ativando Tailscale...${NC}"
+    echo ""
+    echo -e "${YELLOW}⚠ Uma URL será exibida. Abra-a no navegador para autenticar.${NC}"
+    echo ""
+    sleep 2
+
+    tailscale up || {
+        echo -e "${RED}✗ Erro ao ativar Tailscale${NC}"
+        echo -e "${YELLOW}Execute manualmente: sudo tailscale up${NC}"
+        return 1
+    }
+
+    echo ""
+    echo -e "${GREEN}✓ Tailscale ativado com sucesso!${NC}"
+    echo ""
+
+    # Mostrar status
+    echo -e "${BLUE}→ Status do Tailscale:${NC}"
+    tailscale status
+    echo ""
+
+    # Configurar firewall automaticamente
+    configure_tailscale_firewall
+    echo ""
+
+    echo -e "${GREEN}✓ Tailscale configurado com sucesso!${NC}"
+    echo ""
+    echo -e "${WHITE}📝 Próximos passos:${NC}"
+    echo -e "  ${BLUE}1.${NC} Instale Tailscale nos seus outros dispositivos"
+    echo -e "  ${BLUE}2.${NC} Todos os dispositivos aparecerão na mesma rede privada"
+    echo -e "  ${BLUE}3.${NC} O Syncthing usará a conexão Tailscale automaticamente"
+    echo ""
+
+    log_message "SUCESSO: Tailscale instalado e configurado"
+}
+
+################################################################################
+# PASSO 5: CONFIGURAR SENHA
 ################################################################################
 
 configure_password() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}PASSO 4: CONFIGURAR SENHA DE ACESSO (OBRIGATÓRIO)${NC}"
+    echo -e "${WHITE}PASSO 5: CONFIGURAR SENHA DE ACESSO (OBRIGATÓRIO)${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -265,12 +452,12 @@ configure_password() {
 }
 
 ################################################################################
-# PASSO 5: CONFIGURAR CLOUDFLARE TUNNEL
+# PASSO 6: CONFIGURAR CLOUDFLARE TUNNEL
 ################################################################################
 
 configure_cloudflare_tunnel() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}PASSO 5: CONFIGURAR CLOUDFLARE ZERO TRUST TUNNEL${NC}"
+    echo -e "${WHITE}PASSO 6: CONFIGURAR CLOUDFLARE ZERO TRUST TUNNEL${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -294,12 +481,12 @@ configure_cloudflare_tunnel() {
 }
 
 ################################################################################
-# PASSO 6: ADICIONAR PASTA DO OBSIDIAN
+# PASSO 7: ADICIONAR PASTA DO OBSIDIAN
 ################################################################################
 
 configure_obsidian_folder() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}PASSO 6: ADICIONAR PASTA DO OBSIDIAN NO SYNCTHING${NC}"
+    echo -e "${WHITE}PASSO 7: ADICIONAR PASTA DO OBSIDIAN NO SYNCTHING${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -324,12 +511,12 @@ configure_obsidian_folder() {
 }
 
 ################################################################################
-# PASSO 7: CONECTAR DISPOSITIVOS
+# PASSO 8: CONECTAR DISPOSITIVOS
 ################################################################################
 
 show_device_connection_guide() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}PASSO 7: CONECTAR SEUS DISPOSITIVOS${NC}"
+    echo -e "${WHITE}PASSO 8: CONECTAR SEUS DISPOSITIVOS${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -383,10 +570,16 @@ show_summary() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${YELLOW}1.${NC} Configure senha na interface web"
-    echo -e "${YELLOW}2.${NC} Configure Cloudflare Tunnel"
+    echo -e "${YELLOW}2.${NC} Configure Cloudflare Tunnel (ou use Tailscale)"
     echo -e "${YELLOW}3.${NC} Adicione a pasta do Obsidian"
     echo -e "${YELLOW}4.${NC} Conecte seus dispositivos"
     echo ""
+
+    # Mostrar status do Tailscale se estiver instalado
+    if check_tailscale_installed && check_tailscale_running; then
+        echo -e "${GREEN}✓ Tailscale está ativo - Conexões diretas habilitadas${NC}"
+        echo ""
+    fi
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}🔗 LINKS ÚTEIS${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -452,22 +645,27 @@ main() {
     }
     pause
 
-    # Passo 4: Instruções de senha
+    # Passo 4: Configurar Tailscale (NOVO)
+    print_header
+    configure_tailscale
+    pause
+
+    # Passo 5: Instruções de senha
     print_header
     configure_password
     pause
 
-    # Passo 5: Instruções Cloudflare
+    # Passo 6: Instruções Cloudflare
     print_header
     configure_cloudflare_tunnel
     pause
 
-    # Passo 6: Instruções pasta Obsidian
+    # Passo 7: Instruções pasta Obsidian
     print_header
     configure_obsidian_folder
     pause
 
-    # Passo 7: Instruções dispositivos
+    # Passo 8: Instruções dispositivos
     print_header
     show_device_connection_guide
     pause
